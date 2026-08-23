@@ -1,0 +1,105 @@
+// coverage:ignore-file
+
+import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+import 'package:bam_bam_user/app/app.dart';
+
+class TranslationsFile extends Translations {
+  /// List of locales used in the application
+  static const listOfLocales = <Locale>[Locale('en')];
+
+  @override
+  Map<String, Map<String, String>> get keys => {
+    'en': {
+      'appName': StringConstants.appName,
+      'hi': 'Hi',
+      "skip": "Skip",
+      "get_startText1": "Fast Booking, Total Freedom",
+      "get_startText2":
+          "Secure your rental in just a few taps — no long forms or wait times. Pay seamlessly with multiple options and instant confirmation.",
+      "get_started": "Get Started!",
+      "intro1_1": "Find Your Ideal Car in Minutes",
+      "intro1_2":
+          "Explore a wide range of vehicles tailored to your needs — from economy to luxury. Use smart filters to quickly narrow down the best options for your trip.",
+      'intro2_1': 'Where You Need It, When You Need It',
+      'intro2_2':
+          'Pick up your car at the airport, hotel, or any nearby location with ease. Drop it off wherever is most convenient, with no added stress or delays.',
+      'welcome_back': 'Welcome Back!',
+      'logain_account': 'Enter below details to login your account',
+      'signUP_account': 'Enter below details to Sign up your account',
+      'log_in': 'Log In',
+      'sign_up': 'Sign Up',
+      'or': 'Or',
+      'con_google': 'Continue with Google',
+      'con_facebook': 'Continue with Facebook',
+      'full_name': 'Full Name',
+      'enter_full_name': 'Enter Full Name',
+      'email': 'Email',
+      'enter_email': 'Enter Email',
+      'phone_no': 'Phone No.',
+      'enter_phone_no': 'Enter Phone No.',
+      'select_city': 'Select City',
+      'your_city': 'Select your city',
+      'zip_code': 'Zip Code',
+      'enter_code': 'Enter Zip Code',
+      'otp_very': 'OTP Verification',
+      'enter_otp':
+          'Enter OTP send to +91 6743****45 to continue login to your account',
+      'otp': 'OTP',
+      'verify': 'Verify',
+      'where_to_go': 'Where to go?',
+      'go_places_nearby': 'Go Places nearby with BAM BAM!',
+      'why_choose': 'Why Choose Us?',
+      'one_way': 'One Way',
+      'round_Trip': 'Round Trip',
+      'from': 'From',
+      'current_location': 'Current Location',
+      'p_c': 'Pickup Time',
+      'p_d': 'Pickup Date',
+      'exlpore_cabs': 'Explore Cabs',
+      'modify_booking': 'Modify Booking',
+      'choess_you_vehical': 'Choose your Vehicle',
+      'select_car': 'Select Car',
+      'inclusion': 'Inclusion',
+      'exclusion': 'Exclusion',
+      'facility': 'Facility',
+      'T_c': 'T & C',
+      'pickup_address': 'Pickup Address',
+      'entrt_pickup_address': 'Enter Pickup Address',
+      'name': 'Name',
+      'mobile_no': 'Mobile No',
+      'gst_number': 'GST Number',
+      'fare_summary': 'Fare Summary',
+      'base_free': 'Base Fare',
+      'taxes_fees': 'Taxes & Fees',
+      'ohter_charge': 'Other Charges',
+      'coupan': 'Coupon (FIRST RIDE)',
+      'total': 'Total',
+      'payment_option': 'Payment Option',
+      'pay_now': 'Pay Now',
+      'search': 'Search',
+      'cancel_booking': 'Cancel Booking',
+      'bookingz_confrom': 'Booking Confirmed',
+      'view_detiles': 'View Details',
+      'book_agin': 'Book Again',
+      'write_review': 'Write Review',
+      'booking_cancelled': 'Booking Cancelled',
+      'booking_complted': 'Booking Completed',
+      'booking_history': 'Booking History',
+      'booking_id': 'Booking ID',
+      'traveler_detiles': 'Traveler Details',
+      'pickup_adres': 'Pickup Address',
+      'driver_detiles': 'Driver Details',
+      'cancel_dep': 'Are you sure want to cancel booking!',
+      'enter_here': 'Enter Here',
+      'description': 'Description',
+      'reasonfor_cancllation': 'Reason For Cancellation',
+      'review01':
+          'Driver John was punctual, polite, and drove very safely throughout the trip. The car was clean and well-maintained. He even helped with luggage and made sure I reached on time. Highly recommended!”',
+      'personal_information': 'Personal Information',
+      'privacy_policy': 'Privacy Policy',
+      'terms_condition': 'Terms & Conditions',
+      'support_feedback': 'Support & Feedback',
+    },
+  };
+}

@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">Bam Bam User</string>
+
+    <!-- Facebook configuration -->
+    <string name="facebook_app_id">1351280126451584</string>
+    <string name="facebook_client_token">5a77d7922cbee6bd5c6d6400bc75c159</string>
+    <string name="fb_login_protocol_scheme">fb1351280126451584</string>
+</resources>

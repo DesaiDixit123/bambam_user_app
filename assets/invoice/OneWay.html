@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>One Way Trip Invoice</title>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&display=swap"
+        rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            font-family: "Poppins", sans-serif;
+        }
+
+        body {
+            font-family: "Poppins", sans-serif;
+            width: 230mm;
+            height: 297mm;
+            margin: 0 auto;
+            padding: 0px;
+            background-color: #fff;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+        }
+
+        th,
+        td {
+            padding: 8px;
+        }
+
+        .border_less th,
+        .border_less td {
+            padding: 0;
+        }
+
+        .header-text {
+            font-size: 18px;
+            font-weight: bold;
+        }
+
+        .bold {
+            font-weight: bold;
+        }
+    </style>
+</head>
+
+<body style="position: relative;">
+    <div>
+        <!-- Header -->
+        <div style="position: relative; z-index: 20; margin: 10px;">
+            <div style="padding: 20px;">
+                <h2 style="font-size:36px;font-weight:600;color:#0B1727; text-align: center; margin-bottom:8px;">INVOICE
+                </h2>
+                <div style="border-top:1px solid #B6C1D2;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 12px;">
+                        <div style="width: 50%; text-align: center;">
+                          <img src="{{logo}}" alt="logo" style="margin: 0 auto;">
+
+                        </div>
+                        <div style="width: 50%;">
+                            <div
+                                style="color: #0B1727; font-size: 14px; font-weight: 400; line-height: 20px; margin-bottom: 8px; display: flex; ">
+                                <span style="color: #9DA9BB; white-space: nowrap; padding-right:6px;">Company :</span>
+                                <span style="font-weight: 700;">Bambam Cab booking</span>
+                            </div>
+                            <div
+                                style="color: #0B1727; font-size: 14px; font-weight: 400; line-height: 20px; margin-bottom: 8px; display: flex; ">
+                                <span style="color: #9DA9BB; white-space: nowrap; padding-right:6px;">Address :</span>
+                                <span style="font-weight: 700;">3rd Floor, Shree Complex, Ashram Road, Ahmadabad -
+                                    380009</span>
+                            </div>
+                            <div
+                                style="color: #0B1727; font-size: 14px; font-weight: 400; line-height: 20px; margin-bottom: 8px; display: flex; ">
+                                <span style="color: #9DA9BB; white-space: nowrap; padding-right:6px;">Mobile No.
+                                    :</span> <span style="font-weight: 700;">+91 98765 43210</span>
+                            </div>
+                            <div
+                                style="color: #0B1727; font-size: 14px; font-weight: 400; line-height: 20px; margin-bottom: 8px; display: flex; ">
+                                <span style="color: #9DA9BB; white-space: nowrap; padding-right:6px;">GST No. :</span>
+                                <span style="font-weight: 700;">29XAQCS9916CIZT</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+          <img src="{{bg}}" alt="background" style="position:absolute;width:100%;height:100%;inset:0;z-index:-1;">
+
+        </div>
+
+        <div style="margin: 0 30px;">
+            <!-- Custom Details -->
+            <div style="margin-top: 30px;">
+                <table style="width: 100%; border: 1px solid #B6C1D2;">
+                    <thead>
+                        <tr>
+                            <th colspan="2"
+                                style="background-color: #FFF4E3; color: #FBB03B; text-align: center; font-size: 18px; font-weight: 600;">
+                                Customer Details</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <td style="font-size: 14px; font-weight: 400; line-height: 20px;">Customer Name :
+                                <span style="font-weight: 600;">{{customer_name}}</span>
+                            </td>
+                            <td style="font-size: 14px; font-weight: 400; line-height: 20px;">Booking ID :
+                                <span style="font-weight: 600;">{{booking_id}}</span>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style="font-size: 14px; font-weight: 400; line-height: 20px;">Email :
+                                <span style="font-weight: 600;">{{customer_email}}</span>
+                            </td>
+                            <td style="font-size: 14px; font-weight: 400; line-height: 20px;">Invoice ID :
+                                <span style="font-weight: 600;">{{invoice_id}}</span>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style="font-size: 14px; font-weight: 400; line-height: 20px;">Mobile No. :
+                                <span style="font-weight: 600;">{{customer_mobile}}</span>
+                            </td>
+                            <td style="font-size: 14px; font-weight: 400; line-height: 20px;">Invoice Date :
+                                <span style="font-weight: 600;">{{invoice_date}}</span>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Trip Details -->
+            <div style="margin-top: 30px;">
+                <table style="width: 100%; border: 1px solid #B6C1D2; border-collapse: collapse;">
+                    <tr style="vertical-align: top;">
+                        <!-- Left Table -->
+                        <td style="padding: 0; width: 67%; border-right: 1px solid #B6C1D2;">
+                            <table style="width: 100%; border-collapse: collapse; height: 100%;">
+                                <thead>
+                                    <tr>
+                                        <th
+                                            style="background-color: #FFF4E3; color: #FBB03B; text-align: center; font-size: 18px; font-weight: 600; padding: 8px 0;">
+                                            Trip Details
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td style="font-size: 14px; padding: 8px 10px;">
+                                            Trip Type : <span style="font-weight: 600;">{{trip_type}}</span>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td style="font-size: 14px; padding: 8px 10px;">
+                                            Pickup Location :
+                                            <span style="font-weight: 600;">{{pickup_address}}</span>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td style="font-size: 14px; padding: 8px 10px;">
+                                            Drop-off Location :
+                                            <span style="font-weight: 600;">{{drop_address}}</span>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td style="font-size: 14px; padding: 8px 10px;">
+                                            Trip Start Date & Time :
+                                            <span style="font-weight: 600;">{{trip_datetime}}</span>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </td>
+
+                        <!-- Right Table -->
+                        <td style="padding: 0; width: 33%; vertical-align: top;">
+                            <table style="width: 100%; border-collapse: collapse; height: 100%;">
+                                <thead>
+                                    <tr>
+                                        <th colspan="2"
+                                            style="background-color: #FFF4E3; color: #FBB03B; text-align: center; font-size: 18px; font-weight: 600; padding: 8px 0;">
+                                            Amount
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody style="height: 100%; vertical-align: top;">
+                                    <tr>
+                                        <td style="font-size: 14px; padding: 8px 10px; display: flex; justify-content: space-between;">
+                                            <span>Base Fare :</span>
+                                            <span style="font-weight: 600;">₹{{base_fare}}</span>
+                                        </td>
+                                    </tr>
+
+                                    <tr>
+                                        <td style="font-size: 14px; padding: 8px 10px; display: flex; justify-content: space-between;">
+                                            <span>Special Services :</span>
+                                            <span style="font-weight: 600;">₹{{special_services}}</span>
+                                        </td>
+                                    </tr>
+
+                                   
+                                    {{offer_row}}
+ {{pending_row}}
+                                  
+
+                                    <tr>
+                                        <td
+                                            style="font-size: 14px; font-weight: 400; background-color: #FFF4E3; padding: 8px 10px; display: flex; justify-content: space-between;">
+                                            <span>Total Amount Paid :</span>
+                                            <span style="font-weight: 600;">₹{{total_amount}}</span>
+                                        </td>
+                                    </tr>
+
+                                </tbody>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+
+            <div style="margin-top:30px">
+                <h2 style="color: #FBB03B; font-size: 18px; font-weight: 600; margin-bottom: 5px;">Terms & Condition
+                </h2>
+                <ul style="margin-left: 22px;">
+                    <li style="font-size: 14px; margin-bottom: 8px;">
+                        The cost includes driver allowance, fuel charge and service tax @ 4.95%.</li>
+                    <li style="font-size: 14px; margin-bottom: 8px;">
+                        Charges for additional kms over the specified limit will be paid directly to the driver.</li>
+                    <li style="font-size: 14px; margin-bottom: 8px;">
+                        All state taxes, toll and parking charges will be paid directly to the driver.</li>
+                    <li style="font-size: 14px; margin-bottom: 8px;">
+                        Any cancellation must be done 24 hours before trip time.</li>
+                    <li style="font-size: 14px; margin-bottom: 8px;">
+                        The kilometers charged start/end at our office.</li>
+                    <li style="font-size: 14px; margin-bottom: 8px;">
+                        Convenience fees of 4% applicable on credit card payment.</li>
+                    <li style="font-size: 14px; margin-bottom: 8px;">
+                        Please retain this invoice for future reference.</li>
+                </ul>
+            </div>
+
+        </div>
+    </div>
+</body>
+
+</html>

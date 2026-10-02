@@ -63,6 +63,7 @@ class HomePresenter {
     required String exploreCabId,
     String? selectedHours,
     String? selectedKm,
+    double? totalKm,
     bool showLoader = true,
   }) async {
     if (!await Utility.isNetworkAvailable()) {
@@ -79,6 +80,7 @@ class HomePresenter {
       'exploreCabId': exploreCabId,
       if (selectedHours != null) 'selected_hours': selectedHours,
       if (selectedKm != null) 'selected_km': selectedKm,
+      if (totalKm != null) 'total_km': totalKm,
     };
 
     bool loaderShown = false;

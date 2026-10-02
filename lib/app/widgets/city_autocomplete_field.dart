@@ -15,7 +15,8 @@ class CityAutocompleteField extends StatefulWidget {
     this.isDense = false,
     this.label,
     this.labelSpacing = 5,
-    this.maxOptionsHeight = 220,
+    this.maxOptionsHeight = 240,
+    this.showPoweredByGoogle = true,
   });
 
   final TextEditingController controller;
@@ -28,6 +29,8 @@ class CityAutocompleteField extends StatefulWidget {
   final Widget? label;
   final double labelSpacing;
   final double maxOptionsHeight;
+  final bool showPoweredByGoogle;
+
 
   static void dismissSuggestions(BuildContext context) {
     FocusScope.of(context).unfocus();
@@ -132,42 +135,145 @@ class _CityAutocompleteFieldState extends State<CityAutocompleteField> {
             return Align(
               alignment: Alignment.topLeft,
               child: Material(
-                elevation: 4,
+                elevation: 6,
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(4),
+                borderRadius: BorderRadius.circular(8),
+                clipBehavior: Clip.antiAlias,
                 child: Container(
                   width: constraints.maxWidth,
                   constraints: BoxConstraints(maxHeight: widget.maxOptionsHeight),
-                  child: ListView.builder(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    shrinkWrap: true,
-                    itemCount: options.length,
-                    itemBuilder: (context, index) {
-                      final option = options.elementAt(index);
-                      final isSelected = _activeIndex == index;
-                      return InkWell(
-                        onTap: () => _handleSelection(context, option),
-                        onHover: (hovering) {
-                          if (hovering) {
-                            setState(() => _activeIndex = index);
-                          }
-                        },
-                        child: Container(
-                          width: double.infinity,
-                          color: isSelected ? Colors.grey.shade200 : Colors.transparent,
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          child: Text(
-                            option,
-                            style: widget.style?.copyWith(fontSize: 14) ?? const TextStyle(fontSize: 14, color: Colors.black87),
-                            softWrap: true,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(
+                        child: ListView.separated(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          shrinkWrap: true,
+                          itemCount: options.length,
+                          separatorBuilder: (_, __) => Divider(
+                            height: 1,
+                            thickness: 0.5,
+                            color: Colors.grey.shade200,
+                          ),
+                          itemBuilder: (context, index) {
+                            final option = options.elementAt(index);
+                            final isSelected = _activeIndex == index;
+                            return InkWell(
+                              onTap: () => _handleSelection(context, option),
+                              onHover: (hovering) {
+                                if (hovering) {
+                                  setState(() => _activeIndex = index);
+                                }
+                              },
+                              child: Container(
+                                width: double.infinity,
+                                color: isSelected
+                                    ? Colors.grey.shade100
+                                    : Colors.transparent,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 10,
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.location_on_outlined,
+                                      size: 18,
+                                      color: Colors.grey.shade600,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        option,
+                                        style: widget.style?.copyWith(
+                                              fontSize: 13,
+                                              color: Colors.black87,
+                                            ) ??
+                                            const TextStyle(
+                                              fontSize: 13,
+                                              color: Colors.black87,
+                                            ),
+                                        softWrap: true,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                      if (widget.showPoweredByGoogle) ...[
+                        Divider(
+                          height: 1,
+                          thickness: 1,
+                          color: Colors.grey.shade200,
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          color: const Color(0xFFF9F9F9),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              Text(
+                                "powered by ",
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.grey.shade500,
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                              RichText(
+                                text: const TextSpan(
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                  children: [
+                                    TextSpan(
+                                      text: "G",
+                                      style: TextStyle(color: Color(0xFF4285F4)),
+                                    ),
+                                    TextSpan(
+                                      text: "o",
+                                      style: TextStyle(color: Color(0xFFEA4335)),
+                                    ),
+                                    TextSpan(
+                                      text: "o",
+                                      style: TextStyle(color: Color(0xFFFBBC05)),
+                                    ),
+                                    TextSpan(
+                                      text: "g",
+                                      style: TextStyle(color: Color(0xFF4285F4)),
+                                    ),
+                                    TextSpan(
+                                      text: "l",
+                                      style: TextStyle(color: Color(0xFF34A853)),
+                                    ),
+                                    TextSpan(
+                                      text: "e",
+                                      style: TextStyle(color: Color(0xFFEA4335)),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                      );
-                    },
+                      ],
+                    ],
                   ),
                 ),
               ),
             );
+
           },
         );
       }

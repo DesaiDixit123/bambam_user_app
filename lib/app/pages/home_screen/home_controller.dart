@@ -3,10 +3,13 @@ import 'dart:convert';
 import 'dart:developer';
 
 import 'package:bam_bam_user/app/app.dart';
+import 'package:bam_bam_user/app/utils/address_search_field.dart';
+import 'package:bam_bam_user/app/utils/airports_list.dart';
 import 'package:bam_bam_user/app/utils/citys_list.dart';
 import 'package:bam_bam_user/data/helpers/api_wrapper.dart';
 import 'package:bam_bam_user/domain/entities/enums.dart';
 import 'package:flutter/material.dart';
+import 'package:bam_bam_user/app/widgets/custom_time_picker.dart';
 
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
@@ -77,6 +80,61 @@ class HomeController extends GetxController {
   List<Map<String, dynamic>> rentalBlocks = [];
   bool isRefreshingRentalPrice = false;
 
+  void selectRentalPackage(int index) {
+    if (index >= 0 && index < rentalBlocks.length) {
+      selectedRentalIndex = index;
+      update();
+    }
+  }
+
+  double? getLocalRentalPrice(String vehicleTypeId) {
+    if (rentalBlocks.isEmpty || selectedRentalIndex >= rentalBlocks.length) return null;
+    final selectedBlock = rentalBlocks[selectedRentalIndex];
+    final selectedHours = selectedBlock['hours']?.toString();
+    final selectedKm = selectedBlock['km']?.toString();
+
+    // 1. Check if backend provided final_price_local_trip matching this block
+    final List localPrices = datta?['final_price_local_trip'] as List? ?? [];
+    final matched = localPrices.firstWhereOrNull(
+      (e) =>
+          (e['vehicle_type_id']?.toString() == vehicleTypeId ||
+           e['vehicleId']?.toString() == vehicleTypeId ||
+           e['vehicle_type']?.toString() == vehicleTypeId) &&
+          e['selected_hours']?.toString() == selectedHours &&
+          e['selected_km']?.toString() == selectedKm,
+    );
+    if (matched != null && matched['selected_price'] != null) {
+      final p = (matched['selected_price'] as num).toDouble();
+      if (p > 0) return p;
+    }
+
+    // 2. Dynamically look up in exploreTrips[0]['vehicle_pricing']
+    if (exploreTrips.isNotEmpty) {
+      final trip = exploreTrips[0];
+      final vehiclePricing = trip['vehicle_pricing'] as List? ?? [];
+      final matchedVp = vehiclePricing.firstWhereOrNull(
+        (vp) =>
+            vp['vehicle_type_id']?.toString() == vehicleTypeId ||
+            vp['vehicleId']?.toString() == vehicleTypeId ||
+            vp['vehicle_type']?.toString() == vehicleTypeId,
+      );
+      if (matchedVp != null) {
+        final blocks = matchedVp['pricing_blocks'] as List? ?? [];
+        final matchedBlock = blocks.firstWhereOrNull(
+          (b) =>
+              b['hours']?.toString() == selectedHours &&
+              b['km']?.toString() == selectedKm &&
+              b['set_hour_price'] == true,
+        );
+        if (matchedBlock != null && matchedBlock['price'] != null) {
+          final p = (matchedBlock['price'] as num).toDouble();
+          if (p > 0) return p;
+        }
+      }
+    }
+    return null;
+  }
+
   @override
   void onInit() {
     super.onInit();
@@ -91,6 +149,7 @@ class HomeController extends GetxController {
     toDateController.text = DateFormat('hh:mm a').format(oneHourLater);
     initController();
     fetchPaymentOptions();
+    AirportsList.fetchAirports();
 
     _initRazorpay();
   }
@@ -440,17 +499,20 @@ class HomeController extends GetxController {
     double? airportDistanceKm;
     if (tripType == 'Airport' && airportSlabPrice != null) {
       final List slabResults = airportSlabPrice!['slab_results'] as List? ?? [];
+      final vObj = selectedVehicle;
+      final vtVal = vObj != null ? vObj['vehicle_type'] : null;
+      final vTypeId = vtVal is Map ? vtVal['_id']?.toString() : vtVal?.toString();
+      final vId = vObj != null ? vObj['_id']?.toString() : null;
       final matchedSlab = slabResults.firstWhere(
-        (r) =>
-            r['vehicleId']?.toString() ==
-                selectedVehicle?['vehicle_type']?['_id']?.toString() ||
-            r['vehicleId']?.toString() == selectedVehicle?['_id']?.toString(),
+        (r) {
+          final rVid = r['vehicleId']?.toString();
+          return rVid != null && (rVid == vTypeId || rVid == vId);
+        },
         orElse: () => null,
       );
       if (matchedSlab != null) {
-        airportCalculatedPrice = (matchedSlab['price'] is num)
-            ? (matchedSlab['price'] as num).toDouble()
-            : null;
+        final p = matchedSlab['slab_price'] ?? matchedSlab['price'];
+        airportCalculatedPrice = (p is num) ? p.toDouble() : null;
       }
       airportDistanceKm = (airportSlabPrice!['distance_km'] is num)
           ? (airportSlabPrice!['distance_km'] as num).toDouble()
@@ -498,6 +560,21 @@ class HomeController extends GetxController {
       if (airportCalculatedPrice != null)
         "airport_calculated_price": airportCalculatedPrice,
       if (airportDistanceKm != null) "airport_distance_km": airportDistanceKm,
+      if (modifiedPickupLat != null && modifiedPickupLng != null)
+        "pickup_location": {
+          "lat": modifiedPickupLat,
+          "lng": modifiedPickupLng,
+        },
+      if (modifiedDropLat != null && modifiedDropLng != null)
+        "drop_location": {
+          "lat": modifiedDropLat,
+          "lng": modifiedDropLng,
+        },
+      if (calculatedDistanceKm != null && calculatedDistanceKm! > 0)
+        "actual_distance_km": calculatedDistanceKm,
+      "extra_km": currentExtraKm,
+      "extra_km_charge": extraKMsCharge,
+      "km_included": currentIncludedKm,
     };
 
     // remove null values
@@ -616,6 +693,8 @@ class HomeController extends GetxController {
   double finalPrice = 0;
   dynamic basePrice = 0;
   dynamic extraKilometer = 0;
+  double? calculatedDistanceKm;
+  bool isCalculatingDistance = false;
   List<bool> vehicleExpanded = [];
 
   /// Build the request body depending on trip type and call explore-cab
@@ -838,31 +917,68 @@ class HomeController extends GetxController {
         timeLimit: const Duration(seconds: 10),
       );
 
-      // 4️⃣ Reverse geocode to get city name
-      final List<Placemark> placemarks = await placemarkFromCoordinates(
-        position.latitude,
-        position.longitude,
-      );
+      // 4️⃣ Reverse geocode to get city name via Google Maps Geocoding API
+      String city = '';
+      String state = '';
+      String country = 'India';
 
-      if (placemarks.isEmpty) {
-        Utility.closeLoader();
-        Utility.showMessage(
-          'Unable to detect city from location.',
-          MessageType.error,
-          null,
-          'OK',
+      try {
+        final googleUrl = Uri.parse(
+          'https://maps.googleapis.com/maps/api/geocode/json?latlng=${position.latitude},${position.longitude}&key=${StringConstants.gpooglePlaceKey}',
         );
-        return;
+        final response = await ApiWrapper.client
+            .get(googleUrl)
+            .timeout(const Duration(seconds: 8));
+
+        if (response.statusCode == 200 && response.body.isNotEmpty) {
+          final resData = jsonDecode(response.body);
+          if (resData['status'] == 'OK' &&
+              resData['results'] is List &&
+              (resData['results'] as List).isNotEmpty) {
+            final firstResult = resData['results'][0];
+            final comps = firstResult['address_components'] as List? ?? [];
+
+            String getComp(List<String> types) {
+              final found = comps.firstWhereOrNull(
+                (c) =>
+                    c is Map &&
+                    (c['types'] as List?)?.any((t) => types.contains(t)) == true,
+              );
+              return found != null ? (found['long_name']?.toString() ?? '') : '';
+            }
+
+            city = getComp(['locality']);
+            if (city.isEmpty) city = getComp(['administrative_area_level_2']);
+            if (city.isEmpty) city = getComp(['administrative_area_level_3']);
+            state = getComp(['administrative_area_level_1']);
+            country = getComp(['country']);
+            if (country.isEmpty) country = 'India';
+          }
+        }
+      } catch (gErr) {
+        debugPrint('Google Geocode error: $gErr');
       }
 
-      final Placemark place = placemarks.first;
-      final String cityName =
-          place.locality ??
-          place.subAdministrativeArea ??
-          place.administrativeArea ??
-          '';
+      // Fallback: Placemark from coordinates
+      if (city.isEmpty) {
+        final List<Placemark> placemarks = await placemarkFromCoordinates(
+          position.latitude,
+          position.longitude,
+        );
 
-      if (cityName.isEmpty) {
+        if (placemarks.isNotEmpty) {
+          final Placemark place = placemarks.first;
+          city = place.locality?.isNotEmpty == true
+              ? place.locality!
+              : (place.subAdministrativeArea?.isNotEmpty == true
+                  ? place.subAdministrativeArea!
+                  : (place.administrativeArea ?? ''));
+          state = place.administrativeArea ?? '';
+          country = place.country ?? 'India';
+        }
+      }
+
+      if (city.isEmpty && state.isEmpty) {
         Utility.closeLoader();
         Utility.showMessage(
           'Could not extract city name.',
@@ -873,14 +989,24 @@ class HomeController extends GetxController {
         return;
       }
 
-      // 5️⃣ Autofill text field and city variable
-      formController.text = cityName;
-      selectedCity = cityName;
+      // Format as "City, State, Country" (e.g. "Ahmedabad, Gujarat, India")
+      final List<String> parts = [];
+      if (city.isNotEmpty) parts.add(city);
+      if (state.isNotEmpty) parts.add(state);
+      if (country.isNotEmpty) parts.add(country);
+      final String formattedAddress = parts.isNotEmpty ? parts.join(", ") : city;
+
+      // 5️⃣ Autofill text field and store coordinates
+      formController.text = formattedAddress;
+      localCityController.text = formattedAddress;
+      selectedCity = city;
+      modifiedPickupLat = position.latitude;
+      modifiedPickupLng = position.longitude;
       update();
 
       Utility.closeLoader();
       Utility.showMessage(
-        'Detected city: $cityName',
+        'Detected location: $formattedAddress',
         MessageType.success,
         null,
         'OK',
@@ -918,34 +1044,8 @@ class HomeController extends GetxController {
       return sum + amt;
     });
 
-    double baseF = 0.0;
-    double extraKmC = 0.0;
-
-    if (tripMode == 3) {
-      // Airport logic
-      final slabResults = airportSlabPrice?['slab_results'] as List? ?? [];
-      final matchedSlab = slabResults.firstWhereOrNull(
-        (r) =>
-            r['vehicleId']?.toString() ==
-                selectedVehicle?['vehicle_type']?['_id']?.toString() ||
-            r['vehicleId']?.toString() == selectedVehicle?['_id']?.toString(),
-      );
-      if (matchedSlab != null) {
-        baseF = (matchedSlab['slab_price'] is num)
-            ? (matchedSlab['slab_price'] as num).toDouble()
-            : 0.0;
-      } else {
-        baseF =
-            (selectedExploreCab?['base_price_before_tax'] as num?)
-                ?.toDouble() ??
-            (selectedExploreCab?['fix_price_per_day'] as num?)?.toDouble() ??
-            0.0;
-      }
-      extraKmC = 0.0;
-    } else {
-      baseF = basePrice;
-      extraKmC = extraKilometer;
-    }
+    double baseF = displayBaseFare;
+    double extraKmC = (tripMode == 3) ? 0.0 : extraKMsCharge;
 
     // PRE-DISCOUNT TOTAL
     double preDiscountTotal = baseF + extraKmC + servicesTotal;
@@ -1036,26 +1136,28 @@ class HomeController extends GetxController {
         .trim();
 
     String extractCity(String address) {
-      final addressLower = address.toLowerCase();
+      final clean = address.trim();
+      if (clean.isEmpty) return "";
+      final addressLower = clean.toLowerCase();
       for (final city in CitiesList.cities) {
         if (addressLower.contains(city.toLowerCase())) {
           return city;
         }
       }
-      final parts = address.split(',');
-      if (parts.length > 1) {
-        return parts[1].trim();
+      final parts = clean.split(',');
+      if (parts.isNotEmpty && parts[0].trim().isNotEmpty) {
+        return parts[0].trim();
       }
-      return address.trim();
+      return clean;
     }
 
-    final from = cleanCity(rawFrom);
+    final fromCity = extractCity(rawFrom);
 
     if (tripMode == 0) {
-      final to = cleanCity(toController.text.trim());
-      if (from.isNotEmpty &&
-          to.isNotEmpty &&
-          from.toLowerCase() == to.toLowerCase()) {
+      final toCity = extractCity(toController.text.trim());
+      if (fromCity.isNotEmpty &&
+          toCity.isNotEmpty &&
+          fromCity.toLowerCase() == toCity.toLowerCase()) {
         print('DEBUG: From/To same');
         Utility.showMessage(
           "From and To cannot be the same",
@@ -1067,8 +1169,8 @@ class HomeController extends GetxController {
       }
     } else if (tripMode == 1) {
       for (var c in toControllers) {
-        final to = cleanCity(c.text.trim());
-        if (to.isNotEmpty && from.toLowerCase() == to.toLowerCase()) {
+        final toCity = extractCity(c.text.trim());
+        if (toCity.isNotEmpty && fromCity.toLowerCase() == toCity.toLowerCase()) {
           print('DEBUG: From/To same');
           Utility.showMessage(
             "From and To cannot be the same",
@@ -1083,8 +1185,8 @@ class HomeController extends GetxController {
 
     // Validate depending on tripMode
     if (tripMode == 0) {
-      final to = cleanCity(toController.text.trim());
-      if (from.isEmpty || to.isEmpty || pickupDateRaw.isEmpty) {
+      final toCity = extractCity(toController.text.trim());
+      if (fromCity.isEmpty || toCity.isEmpty || pickupDateRaw.isEmpty) {
         print('DEBUG: From/To/Date empty');
         Utility.showMessage(
           "Please fill From/To/Pickup date",
@@ -1106,10 +1208,10 @@ class HomeController extends GetxController {
       }
     } else if (tripMode == 1) {
       final toList = toControllers
-          .map((c) => cleanCity(c.text.trim()))
+          .map((c) => extractCity(c.text.trim()))
           .where((s) => s.isNotEmpty)
           .toList();
-      if (from.isEmpty ||
+      if (fromCity.isEmpty ||
           toList.isEmpty ||
           pickupDateRaw.isEmpty ||
           returnDateController.text.trim().isEmpty) {
@@ -1122,7 +1224,7 @@ class HomeController extends GetxController {
         return;
       }
     } else if (tripMode == 2) {
-      final city = cleanCity(localCityController.text.trim());
+      final city = extractCity(localCityController.text.trim());
       if (city.isEmpty || pickupDateRaw.isEmpty) {
         Utility.showMessage(
           "Please select City and Pickup date",
@@ -1134,7 +1236,7 @@ class HomeController extends GetxController {
       }
     } else if (tripMode == 3) {
       final validationTo = cleanCity(toController.text.trim());
-      if (from.isEmpty || validationTo.isEmpty || pickupDateRaw.isEmpty) {
+      if (fromCity.isEmpty || validationTo.isEmpty || pickupDateRaw.isEmpty) {
         print('DEBUG: Details empty');
         Utility.showMessage(
           "Please fill all details",
@@ -1148,10 +1250,11 @@ class HomeController extends GetxController {
 
     Map<String, dynamic> body = {};
     if (tripMode == 0) {
+      final toCity = extractCity(toController.text.trim());
       body = {
         "trip_type": "Oneway",
-        "from": from,
-        "to": cleanCity(toController.text.trim()),
+        "from": fromCity,
+        "to": toCity,
         "pickup_date": _formatToApiDate(pickupDateRaw),
         "pickup_time": toDateController.text.trim().isNotEmpty
             ? toDateController.text.trim()
@@ -1159,21 +1262,21 @@ class HomeController extends GetxController {
       };
     } else if (tripMode == 1) {
       final toList = toControllers
-          .map((c) => cleanCity(c.text.trim()))
+          .map((c) => extractCity(c.text.trim()))
           .where((s) => s.isNotEmpty)
           .toList();
       final returnDateRaw = returnDateController.text.trim();
       final pTime = pickupTimeRtController.text.trim();
       body = {
         "trip_type": "Round Trip",
-        "from": from,
+        "from": fromCity,
         "to": toList,
         "pickup_date": _formatToApiDate(pickupDateRaw),
         "return_date": _formatToApiDate(returnDateRaw),
         "pickup_time": pTime.isNotEmpty ? pTime : "09:00 AM",
       };
     } else if (tripMode == 2) {
-      final city = cleanCity(localCityController.text.trim());
+      final city = extractCity(localCityController.text.trim());
       final selectedBlock = rentalBlocks.isNotEmpty
           ? rentalBlocks[selectedRentalIndex]
           : null;
@@ -1254,25 +1357,6 @@ class HomeController extends GetxController {
             selectedRentalIndex >= rentalBlocks.length) {
           selectedRentalIndex = 0;
         }
-
-        if (rentalBlocks.isNotEmpty) {
-          final first = rentalBlocks[0];
-          final body2 = {
-            "trip_type": "Local Rental Trip",
-            "city": cleanCity(localCityController.text.trim()),
-            "pickup_date": _formatToApiDate(fromDateController.text),
-            "pickup_time": toDateController.text,
-            "selected_hours": first['hours'].toString(),
-            "selected_km": first['km'].toString(),
-          };
-          final res2 = await homePresenter.exploreCabs(
-            body2,
-            showLoader: false,
-          );
-          final json2 = jsonDecode(res2.data) as Map<String, dynamic>;
-          datta = json2['Data'];
-          update();
-        }
       }
 
       exploreVehicles = datta?['vehicles'] as List<dynamic>? ?? [];
@@ -1342,10 +1426,35 @@ class HomeController extends GetxController {
     List<String> toList = [];
 
     // ------------------------------------
-    // 🚫 Pickup and Drop must not be same
+    // ------------------------------------
+    // 🚫 Pickup and Drop Validation
     // ------------------------------------
 
     final pickupAddr = pickupController.text.trim();
+    if (pickupAddr.isEmpty) {
+      isProcessingBooking = false;
+      Utility.showMessage(
+        "Please select pickup address",
+        MessageType.error,
+        null,
+        "OK",
+      );
+      return;
+    }
+
+    if (tripType != 'Local Rental Trip') {
+      final dropAddr = dropController.text.trim();
+      if (dropAddr.isEmpty) {
+        isProcessingBooking = false;
+        Utility.showMessage(
+          "Please select drop address",
+          MessageType.error,
+          null,
+          "OK",
+        );
+        return;
+      }
+    }
 
     // Oneway
     if (tripType == 'Oneway') {
@@ -1418,21 +1527,57 @@ class HomeController extends GetxController {
     double? airportDistanceKm;
     if (tripType == 'Airport' && airportSlabPrice != null) {
       final List slabResults = airportSlabPrice!['slab_results'] as List? ?? [];
+      final vObj = selectedVehicle;
+      final vtVal = vObj != null ? vObj['vehicle_type'] : null;
+      final vTypeId = vtVal is Map ? vtVal['_id']?.toString() : vtVal?.toString();
+      final vId = vObj != null ? vObj['_id']?.toString() : null;
       final matchedSlab = slabResults.firstWhere(
-        (r) =>
-            r['vehicleId']?.toString() ==
-                selectedVehicle?['vehicle_type']?['_id']?.toString() ||
-            r['vehicleId']?.toString() == selectedVehicle?['_id']?.toString(),
+        (r) {
+          final rVid = r['vehicleId']?.toString();
+          return rVid != null && (rVid == vTypeId || rVid == vId);
+        },
         orElse: () => null,
       );
       if (matchedSlab != null) {
-        airportCalculatedPrice = (matchedSlab['price'] is num)
-            ? (matchedSlab['price'] as num).toDouble()
-            : null;
+        final p = matchedSlab['slab_price'] ?? matchedSlab['price'];
+        airportCalculatedPrice = (p is num) ? p.toDouble() : null;
       }
       airportDistanceKm = (airportSlabPrice!['distance_km'] is num)
           ? (airportSlabPrice!['distance_km'] as num).toDouble()
           : null;
+    }
+
+    // Ensure coordinates are resolved for driver assignment
+    if (modifiedPickupLat == null || modifiedPickupLng == null) {
+      final pAddr = pickupController.text.trim().isNotEmpty
+          ? pickupController.text.trim()
+          : formController.text.trim();
+      if (pAddr.isNotEmpty) {
+        final coords = await GooglePlacesHelper.getCoordinates(
+          pAddr,
+          StringConstants.gpooglePlaceKey,
+        );
+        if (coords != null) {
+          modifiedPickupLat = coords["lat"];
+          modifiedPickupLng = coords["lng"];
+        }
+      }
+    }
+
+    if (modifiedDropLat == null || modifiedDropLng == null) {
+      final dAddr = dropController.text.trim().isNotEmpty
+          ? dropController.text.trim()
+          : toController.text.trim();
+      if (dAddr.isNotEmpty) {
+        final coords = await GooglePlacesHelper.getCoordinates(
+          dAddr,
+          StringConstants.gpooglePlaceKey,
+        );
+        if (coords != null) {
+          modifiedDropLat = coords["lat"];
+          modifiedDropLng = coords["lng"];
+        }
+      }
     }
 
     final body = <String, dynamic>{
@@ -1465,6 +1610,21 @@ class HomeController extends GetxController {
       if (airportCalculatedPrice != null)
         "airport_calculated_price": airportCalculatedPrice,
       if (airportDistanceKm != null) "airport_distance_km": airportDistanceKm,
+      if (modifiedPickupLat != null && modifiedPickupLng != null)
+        "pickup_location": {
+          "lat": modifiedPickupLat,
+          "lng": modifiedPickupLng,
+        },
+      if (modifiedDropLat != null && modifiedDropLng != null)
+        "drop_location": {
+          "lat": modifiedDropLat,
+          "lng": modifiedDropLng,
+        },
+      if (calculatedDistanceKm != null && calculatedDistanceKm! > 0)
+        "actual_distance_km": calculatedDistanceKm,
+      "extra_km": currentExtraKm,
+      "extra_km_charge": extraKMsCharge,
+      "km_included": currentIncludedKm,
     };
 
     body.removeWhere((k, v) => v == null);
@@ -1569,9 +1729,22 @@ class HomeController extends GetxController {
       return;
     }
     Utility.showLoader();
+    final selectedBlock = (tripMode == 2 &&
+            rentalBlocks.isNotEmpty &&
+            selectedRentalIndex < rentalBlocks.length)
+        ? rentalBlocks[selectedRentalIndex]
+        : null;
+
+    final double? tKm = tripMode == 3
+        ? ((airportSlabPrice?['distance_km'] as num?)?.toDouble() ?? totalKm)
+        : null;
+
     final res = await homePresenter.selectVehicle(
       vehicleId: vehicleId,
       exploreCabId: exploreId,
+      selectedHours: selectedBlock?['hours']?.toString(),
+      selectedKm: selectedBlock?['km']?.toString(),
+      totalKm: tKm,
       showLoader: true,
     );
 
@@ -1597,25 +1770,44 @@ class HomeController extends GetxController {
       final json = jsonDecode(res.data) as Map<String, dynamic>;
       final data = json['Data'] as Map<String, dynamic>?;
       log("ddddddd$data");
+      final vMap = (data != null && data['vehicle'] is Map)
+          ? data['vehicle'] as Map
+          : null;
+      final expMap = (data != null && data['exploreCab'] is Map)
+          ? data['exploreCab'] as Map
+          : null;
+      final vTypeVal = vMap?['vehicle_type'];
+      final vTypeId = vTypeVal is Map ? vTypeVal['_id']?.toString() : vTypeVal?.toString();
+
       if (tripMode == 3 && airportSlabPrice != null) {
         final List slabResults =
             airportSlabPrice!['slab_results'] as List? ?? [];
         final matchedSlab = slabResults.firstWhere(
-          (r) => r['vehicleId']?.toString() == vehicleId,
+          (r) =>
+              r['vehicleId']?.toString() == vehicleId ||
+              (vTypeId != null && r['vehicleId']?.toString() == vTypeId),
           orElse: () => null,
         );
         if (matchedSlab != null) {
-          basePrice = (matchedSlab['slab_price'] is num)
-              ? (matchedSlab['slab_price'] as num).toDouble()
-              : 0.0;
+          final slabP = matchedSlab['slab_price'] ?? matchedSlab['price'];
+          basePrice = (slabP is num) ? slabP.toDouble() : 0.0;
         } else {
-          basePrice = (data?['exploreCab']['final_price'] is num)
-              ? (data?['exploreCab']['final_price'] as num).toDouble()
+          basePrice = (expMap?['final_price'] is num)
+              ? (expMap!['final_price'] as num).toDouble()
+              : 0.0;
+        }
+      } else if (tripMode == 2) {
+        final localP = getLocalRentalPrice(vTypeId ?? vehicleId);
+        if (localP != null && localP > 0) {
+          basePrice = localP;
+        } else {
+          basePrice = (expMap?['final_price'] is num)
+              ? (expMap!['final_price'] as num).toDouble()
               : 0.0;
         }
       } else {
-        basePrice = (data?['exploreCab']['final_price'] is num)
-            ? (data?['exploreCab']['final_price'] as num).toDouble()
+        basePrice = (expMap?['final_price'] is num)
+            ? (expMap!['final_price'] as num).toDouble()
             : 0.0;
       }
       // Save the important parts for VehicalDetilesScreen
@@ -1637,24 +1829,52 @@ class HomeController extends GetxController {
         final vt = selectedVehicle!['vehicle_type'];
         if (vt is! Map) {
           final matchedVehicle = exploreVehicles.firstWhere(
-            (v) => v is Map && v['_id']?.toString() == selectedVehicle!['_id']?.toString(),
+            (v) =>
+                v is Map &&
+                (v['_id']?.toString() == selectedVehicle!['_id']?.toString() ||
+                    v['_id']?.toString() == vehicleId),
             orElse: () => null,
           );
           if (matchedVehicle != null && matchedVehicle['vehicle_type'] is Map) {
-            selectedVehicle!['vehicle_type'] = Map<String, dynamic>.from(matchedVehicle['vehicle_type'] as Map);
+            selectedVehicle!['vehicle_type'] = Map<String, dynamic>.from(
+              matchedVehicle['vehicle_type'] as Map,
+            );
           }
         }
       }
 
-      // Pre-fill the booking inputs with the search location values ONLY for Airport trips (tripMode == 3)
-      if (tripMode == 3) {
-        pickupController.text = formController.text;
-        dropController.text = toController.text;
-      } else {
-        pickupController.clear();
-        dropController.clear();
+      if (tripMode == 3 && airportSlabPrice != null) {
+        final slabDistance = (airportSlabPrice!['distance_km'] is num)
+            ? (airportSlabPrice!['distance_km'] as num).toDouble()
+            : 0.0;
+        if (slabDistance > 0) {
+          totalKm = slabDistance;
+          if (selectedExploreCab != null) {
+            selectedExploreCab!['totalKm'] = slabDistance;
+          }
+        }
       }
 
+      // Do NOT pre-fill pickup/drop with city names so user explicitly chooses exact addresses
+      if (tripMode == 3) {
+        // Airport trip
+        if (pickupType == 'pickup') {
+          pickupController.text = formController.text;
+          dropController.text = '';
+        } else {
+          pickupController.text = '';
+          dropController.text = toController.text;
+        }
+      } else {
+        pickupController.text = '';
+        dropController.text = '';
+      }
+      modifiedPickupLat = null;
+      modifiedPickupLng = null;
+      modifiedDropLat = null;
+      modifiedDropLng = null;
+
+      updateTotalFare();
       update();
       Utility.showMessage('Vehicle selected', MessageType.success, null, 'OK');
 
@@ -1674,6 +1894,16 @@ class HomeController extends GetxController {
 
   /// Swap the From and To values (used by the center swap button)
   void swapFromTo() {
+    if (tripMode == 3) {
+      final oldFrom = formController.text;
+      final oldTo = toController.text;
+      pickupType = (pickupType == 'pickup') ? 'drop' : 'pickup';
+      formController.text = oldTo;
+      toController.text = oldFrom;
+      update();
+      return;
+    }
+
     final currentFrom = formController.text;
 
     if (tripMode == 1 && toControllers.isNotEmpty) {
@@ -1685,9 +1915,6 @@ class HomeController extends GetxController {
       formController.text = currentTo;
       toController.text = currentFrom;
     }
-
-    // If you also use pickupController for another flow, keep it synced:
-    pickupController.text = formController.text;
 
     update();
   }
@@ -1718,6 +1945,22 @@ class HomeController extends GetxController {
     final ctx = context ?? Get.context;
     if (ctx == null) return;
 
+    final travelerName = nameController.text.trim();
+    String rawBookingId = '';
+    if (bookingResponse != null) {
+      rawBookingId = (bookingResponse!['booking']?['booking_id'] ??
+              bookingResponse!['booking_id'] ??
+              bookingResponse!['booking_no'] ??
+              bookingResponse!['bookingId'] ??
+              bookingResponse!['id'] ??
+              '')
+          .toString()
+          .trim();
+    }
+    final formattedBookingId = rawBookingId.isNotEmpty
+        ? (rawBookingId.startsWith('#') ? rawBookingId : '#$rawBookingId')
+        : '';
+
     showDialog(
       context: ctx,
       barrierDismissible: false,
@@ -1728,100 +1971,173 @@ class HomeController extends GetxController {
             return false;
           },
           child: Dialog(
-            insetPadding: EdgeInsets.symmetric(horizontal: 20),
-            backgroundColor: Colors.transparent, // for rounded outer look
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                // ---------------- MAIN CARD ----------------
-                Container(
-                  padding: EdgeInsets.symmetric(vertical: 30, horizontal: 20),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(22),
+            insetPadding: const EdgeInsets.symmetric(horizontal: 18),
+            backgroundColor: Colors.transparent,
+            child: Container(
+              width: double.infinity,
+              constraints: const BoxConstraints(maxWidth: 420),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Colors.black12,
+                    blurRadius: 15,
+                    offset: Offset(0, 5),
                   ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // SUCCESS IMAGE
-                      Image.asset(
-                        AssetConstants.sucees_Design,
-                        height: 140,
-                        fit: BoxFit.contain,
-                      ),
-                      SizedBox(height: 25),
-
-                      // TITLE
-                      Text(
-                        "Your Car Booking is Confirmed!",
-                        style: Styles.txtBlackColorW70020.copyWith(
-                          fontSize: 20,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                      SizedBox(height: 12),
-
-                      // SUBTEXT
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                        child: Text(
-                          "Your rental booking has been successfully completed. Check your rental in booking history.",
-                          style: Styles.txtG5ColorsW40014.copyWith(
-                            fontSize: 14,
-                            height: 1.5,
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // ---------------- HEADER ----------------
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    child: Row(
+                      children: [
+                        const SizedBox(width: 30), // Spacer for centering
+                        const Expanded(
+                          child: Text(
+                            "Booking Confirmation",
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF0F172A),
+                            ),
+                            textAlign: TextAlign.center,
                           ),
-                          textAlign: TextAlign.center,
                         ),
-                      ),
-                      SizedBox(height: 28),
-
-                      // BUTTON
-                      SizedBox(
-                        width: 160,
-                        height: 48,
-                        child: ElevatedButton(
-                          onPressed: () {
+                        InkWell(
+                          onTap: () {
                             Navigator.of(context).pop();
                             RouteManagement.gotoBookingHistoryScreen(context);
                           },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: ColorsValue.appColor,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
+                          child: Container(
+                            height: 30,
+                            width: 30,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFFEF4444),
+                              shape: BoxShape.circle,
                             ),
-                          ),
-                          child: Text(
-                            "View Booking",
-                            style: Styles.txtBlackColorW50016,
+                            child: const Icon(Icons.close, color: Colors.white, size: 18),
                           ),
                         ),
-                      ),
-                      SizedBox(height: 10),
-                    ],
-                  ),
-                ),
-
-                // ---------------- CLOSE BUTTON ----------------
-                Positioned(
-                  right: 10,
-                  top: 10,
-                  child: InkWell(
-                    onTap: () {
-                      Navigator.of(context).pop();
-                      RouteManagement.gotoBookingHistoryScreen(context);
-                    },
-                    child: Container(
-                      height: 35,
-                      width: 35,
-                      decoration: BoxDecoration(
-                        color: Colors.red.shade400,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(Icons.close, color: Colors.white, size: 20),
+                      ],
                     ),
                   ),
-                ),
-              ],
+                  const Divider(height: 1, thickness: 1, color: Color(0xFFE2E8F0)),
+
+                  // ---------------- BODY ----------------
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Car Image
+                        Image.asset(
+                          AssetConstants.carConfirm,
+                          height: 110,
+                          fit: BoxFit.contain,
+                        ),
+                        const SizedBox(height: 12),
+                        const Divider(height: 1, thickness: 1, color: Color(0xFFE2E8F0)),
+                        const SizedBox(height: 16),
+
+                        // Thank You
+                        Text(
+                          "Thank You${travelerName.isNotEmpty ? ', $travelerName' : ''}!",
+                          style: const TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFFF96602),
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 8),
+
+                        // Your Booking is received.
+                        const Text(
+                          "Your Booking is received.",
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF0F172A),
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 14),
+
+                        // Reservation details with Booking ID
+                        RichText(
+                          textAlign: TextAlign.left,
+                          text: TextSpan(
+                            style: const TextStyle(
+                              fontSize: 13.5,
+                              color: Color(0xFF64748B),
+                              height: 1.45,
+                            ),
+                            children: [
+                              const TextSpan(text: "You will receive the reservation details with "),
+                              TextSpan(
+                                text: "Booking ID ${formattedBookingId.isNotEmpty ? formattedBookingId : '—'}",
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFFF96602),
+                                ),
+                              ),
+                              const TextSpan(text: " on your email address and mobile soon."),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+
+                        // Driver details note
+                        const Text(
+                          "You will receive your driver details within 1 hour n 30 mins of your pickup time. We seek your cooperation to avoid enquiring about the driver details before the specific time.",
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontStyle: FontStyle.italic,
+                            fontWeight: FontWeight.w500,
+                            color: Color(0xFF1E293B),
+                            height: 1.4,
+                          ),
+                          textAlign: TextAlign.left,
+                        ),
+                        const SizedBox(height: 24),
+
+                        // View Booking Button
+                        GestureDetector(
+                          onTap: () {
+                            Navigator.of(context).pop();
+                            RouteManagement.gotoBookingHistoryScreen(context);
+                          },
+                          child: Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              Image.asset(
+                                AssetConstants.big_btn,
+                                height: 48,
+                                fit: BoxFit.contain,
+                              ),
+                              const Padding(
+                                padding: EdgeInsets.only(right: 20.0),
+                                child: Text(
+                                  "View Booking",
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         );
@@ -1999,18 +2315,30 @@ class HomeController extends GetxController {
           if (selectedVehicle != null) {
             final List slabResults =
                 airportSlabPrice!['slab_results'] as List? ?? [];
+            final vObj = selectedVehicle;
+            final vtVal = vObj != null ? vObj['vehicle_type'] : null;
+            final vTypeId = vtVal is Map ? vtVal['_id']?.toString() : vtVal?.toString();
+            final vId = vObj != null ? vObj['_id']?.toString() : null;
+
+            final wrapObj = selectedVehicleWrapper;
+            final wrapVtVal = wrapObj != null ? wrapObj['vehicle_type'] : null;
+            final wrapTypeId = wrapVtVal is Map ? wrapVtVal['_id']?.toString() : wrapVtVal?.toString();
+            final wrapId = wrapObj != null ? wrapObj['_id']?.toString() : null;
+
             final matchedSlab = slabResults.firstWhere(
-              (r) =>
-                  r['vehicleId']?.toString() ==
-                      selectedVehicle?['vehicle_type']?['_id']?.toString() ||
-                  r['vehicleId']?.toString() ==
-                      selectedVehicle?['_id']?.toString(),
+              (r) {
+                final rVid = r['vehicleId']?.toString();
+                return rVid != null &&
+                    (rVid == vTypeId ||
+                        rVid == vId ||
+                        rVid == wrapTypeId ||
+                        rVid == wrapId);
+              },
               orElse: () => null,
             );
             if (matchedSlab != null) {
-              basePrice = (matchedSlab['slab_price'] is num)
-                  ? (matchedSlab['slab_price'] as num).toDouble()
-                  : 0.0;
+              final slabP = matchedSlab['slab_price'] ?? matchedSlab['price'];
+              basePrice = (slabP is num) ? slabP.toDouble() : 0.0;
             }
           }
 
@@ -2026,9 +2354,19 @@ class HomeController extends GetxController {
   }
 
   Future<void> openPickupDatePicker(BuildContext context) async {
+    DateTime initial = DateTime.now();
+    try {
+      if (fromDateController.text.isNotEmpty) {
+        final parts = fromDateController.text.split('-');
+        if (parts.length == 3) {
+          initial = DateTime(int.parse(parts[2]), int.parse(parts[1]), int.parse(parts[0]));
+        }
+      }
+    } catch (_) {}
+
     final picked = await showDatePicker(
       context: context,
-      initialDate: DateTime.now(),
+      initialDate: initial.isAfter(DateTime.now()) ? initial : DateTime.now(),
       firstDate: DateTime.now(),
       lastDate: DateTime.now().add(const Duration(days: 365)),
     );
@@ -2037,15 +2375,47 @@ class HomeController extends GetxController {
       final m = picked.month.toString().padLeft(2, '0');
       final y = picked.year.toString();
       fromDateController.text = '$d-$m-$y';
+
+      // Auto-set return date to pickup_date + 1 day for Round Trip
+      if (tripMode == 1) {
+        final nextDay = picked.add(const Duration(days: 1));
+        final rd = nextDay.day.toString().padLeft(2, '0');
+        final rm = nextDay.month.toString().padLeft(2, '0');
+        final ry = nextDay.year.toString();
+        returnDateController.text = '$rd-$rm-$ry';
+      }
       update();
     }
   }
 
   Future<void> openReturnDatePicker(BuildContext context) async {
+    DateTime minDate = DateTime.now();
+    try {
+      if (fromDateController.text.isNotEmpty) {
+        final parts = fromDateController.text.split('-');
+        if (parts.length == 3) {
+          minDate = DateTime(int.parse(parts[2]), int.parse(parts[1]), int.parse(parts[0]));
+        }
+      }
+    } catch (_) {}
+
+    DateTime initial = minDate.add(const Duration(days: 1));
+    try {
+      if (returnDateController.text.isNotEmpty) {
+        final parts = returnDateController.text.split('-');
+        if (parts.length == 3) {
+          final cand = DateTime(int.parse(parts[2]), int.parse(parts[1]), int.parse(parts[0]));
+          if (cand.isAfter(minDate) || cand.isAtSameMomentAs(minDate)) {
+            initial = cand;
+          }
+        }
+      }
+    } catch (_) {}
+
     final picked = await showDatePicker(
       context: context,
-      initialDate: DateTime.now(),
-      firstDate: DateTime.now(),
+      initialDate: initial.isAfter(minDate) ? initial : minDate,
+      firstDate: minDate,
       lastDate: DateTime.now().add(const Duration(days: 365)),
     );
     if (picked != null) {
@@ -2057,14 +2427,42 @@ class HomeController extends GetxController {
     }
   }
 
+
   Future<void> openPickupTimePicker(BuildContext context) async {
-    final picked = await showTimePicker(
+    final now = DateTime.now();
+    bool isToday = false;
+    try {
+      if (fromDateController.text.trim().isNotEmpty) {
+        final selectedDate = DateFormat('dd-MM-yyyy').parse(fromDateController.text.trim());
+        isToday = selectedDate.year == now.year && selectedDate.month == now.month && selectedDate.day == now.day;
+      }
+    } catch (_) {}
+
+    TimeOfDay? minTime;
+    TimeOfDay initialTime = TimeOfDay.now();
+
+    if (isToday) {
+      final future15 = now.add(const Duration(minutes: 15));
+      int roundedMin = ((future15.minute + 4) ~/ 5) * 5;
+      int roundedHour = future15.hour;
+      if (roundedMin >= 60) {
+        roundedMin = 0;
+        roundedHour = (roundedHour + 1) % 24;
+      }
+      minTime = TimeOfDay(hour: future15.hour, minute: future15.minute);
+      initialTime = TimeOfDay(hour: roundedHour, minute: roundedMin);
+    }
+
+    final picked = await showCustomTimePicker(
       context: context,
-      initialTime: TimeOfDay.now(),
+      initialTime: initialTime,
+      minTime: minTime,
     );
+
     if (picked != null) {
+      final hour12 = picked.hourOfPeriod == 0 ? 12 : picked.hourOfPeriod;
       final formattedTime =
-          '${picked.hourOfPeriod.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')} ${picked.period == DayPeriod.am ? 'AM' : 'PM'}';
+          '${hour12.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')} ${picked.period == DayPeriod.am ? 'AM' : 'PM'}';
       if (tripMode == 1) {
         pickupTimeRtController.text = formattedTime;
       } else {
@@ -2077,7 +2475,14 @@ class HomeController extends GetxController {
   // --- Computed Properties for Details Screen ---
 
   int get rawUptoKmComputed {
-    if (tripMode == 0 || tripMode == 3) {
+    if (tripMode == 3) {
+      if (airportSlabPrice != null && airportSlabPrice!['distance_km'] != null) {
+        final d = (airportSlabPrice!['distance_km'] as num?)?.toInt() ?? 0;
+        if (d > 0) return d;
+      }
+      return (selectedExploreCab?['totalKm'] as num?)?.toInt() ?? totalKm.toInt();
+    }
+    if (tripMode == 0) {
       final tkm =
           (selectedExploreCab?['totalKm'] as num?)?.toInt() ?? totalKm.toInt();
       return tkm;
@@ -2088,20 +2493,51 @@ class HomeController extends GetxController {
   double get displayBaseFare {
     if (tripMode == 3) {
       final slabResults = airportSlabPrice?['slab_results'] as List? ?? [];
+      final vObj = selectedVehicle;
+      final vtVal = vObj != null ? vObj['vehicle_type'] : null;
+      final vTypeId = vtVal is Map ? vtVal['_id']?.toString() : vtVal?.toString();
+      final vId = vObj != null ? vObj['_id']?.toString() : null;
+
+      final wrapObj = selectedVehicleWrapper;
+      final wrapVtVal = wrapObj != null ? wrapObj['vehicle_type'] : null;
+      final wrapTypeId = wrapVtVal is Map ? wrapVtVal['_id']?.toString() : wrapVtVal?.toString();
+      final wrapId = wrapObj != null ? wrapObj['_id']?.toString() : null;
+
       final matchedSlab = slabResults.firstWhereOrNull(
-        (r) =>
-            r['vehicleId']?.toString() ==
-                selectedVehicle?['vehicle_type']?['_id']?.toString() ||
-            r['vehicleId']?.toString() == selectedVehicle?['_id']?.toString(),
+        (r) {
+          final rVid = r['vehicleId']?.toString();
+          return rVid != null &&
+              (rVid == vTypeId ||
+                  rVid == vId ||
+                  rVid == wrapTypeId ||
+                  rVid == wrapId);
+        },
       );
       if (matchedSlab != null) {
-        return (matchedSlab['price'] is num)
-            ? (matchedSlab['price'] as num).toDouble()
-            : 0.0;
+        final slabPrice = (matchedSlab['slab_price'] is num)
+            ? (matchedSlab['slab_price'] as num).toDouble()
+            : (matchedSlab['price'] is num)
+                ? (matchedSlab['price'] as num).toDouble()
+                : 0.0;
+        if (slabPrice > 0) return slabPrice;
       }
       return (selectedExploreCab?['base_price_before_tax'] as num?)
               ?.toDouble() ??
           (selectedExploreCab?['fix_price_per_day'] as num?)?.toDouble() ??
+          (selectedExploreCab?['final_price'] as num?)?.toDouble() ??
+          0.0;
+    }
+    if (tripMode == 2) {
+      final vObj = selectedVehicle;
+      final vtVal = vObj != null ? vObj['vehicle_type'] : null;
+      final wrapObj = selectedVehicleWrapper;
+      final wrapVtVal = wrapObj != null ? wrapObj['vehicle_type'] : null;
+      final vTypeId = (vtVal is Map ? vtVal['_id']?.toString() : vtVal?.toString()) ??
+                      (wrapVtVal is Map ? wrapVtVal['_id']?.toString() : wrapVtVal?.toString());
+      final localP = getLocalRentalPrice(vTypeId ?? '');
+      if (localP != null && localP > 0) return localP;
+      return (selectedExploreCab?['base_price_before_tax'] as num?)?.toDouble() ??
+          (selectedExploreCab?['final_price'] as num?)?.toDouble() ??
           0.0;
     }
     return (selectedExploreCab?['base_price_before_tax'] as num?)?.toDouble() ??
@@ -2120,57 +2556,145 @@ class HomeController extends GetxController {
     return (selectedExploreCab?['upto_km'] as num?)?.toDouble() ?? 0.0;
   }
 
-  double get extraKMsCharge {
-    double displayExtraKm = 0.0;
-    if (tripMode == 0 || tripMode == 1) {
-      final double totalDistance =
-          (selectedExploreCab?['totalKm'] as num?)?.toDouble() ?? totalKm;
-      final double rawUptoKm = tripMode == 1
-          ? ((selectedExploreCab?['upto_km_limit'] as num?)?.toDouble() ??
-                    0.0) *
-                tripDaysNum
-          : ((selectedExploreCab?['upto_km'] as num?)?.toDouble() ?? 0.0);
-      final diff = totalDistance - rawUptoKm;
-      displayExtraKm = diff > 0 ? diff : 0.0;
+  double get currentTotalKm {
+    if (tripMode == 3) {
+      if (airportSlabPrice != null && airportSlabPrice!['distance_km'] != null) {
+        final d = (airportSlabPrice!['distance_km'] as num?)?.toDouble() ?? 0.0;
+        if (d > 0) return d;
+      }
+      return (selectedExploreCab?['totalKm'] as num?)?.toDouble() ?? totalKm;
     }
+    if (calculatedDistanceKm != null && calculatedDistanceKm! > 0) {
+      if (tripMode == 1) {
+        return calculatedDistanceKm! * 2;
+      }
+      return calculatedDistanceKm!;
+    }
+    return (selectedExploreCab?['totalKm'] as num?)?.toDouble() ?? totalKm;
+  }
 
-    double perKmRate = 0.0;
+  double get currentIncludedKm {
+    if (tripMode == 3) {
+      if (airportSlabPrice != null && airportSlabPrice!['distance_km'] != null) {
+        final d = (airportSlabPrice!['distance_km'] as num?)?.toDouble() ?? 0.0;
+        if (d > 0) return d;
+      }
+      return (selectedExploreCab?['totalKm'] as num?)?.toDouble() ?? totalKm;
+    }
+    if (tripMode == 0) {
+      // Oneway: included = the explore totalKm (package distance)
+      return (selectedExploreCab?['totalKm'] as num?)?.toDouble() ?? totalKm;
+    }
+    if (tripMode == 1) {
+      // RoundTrip: included = upto_km_limit × tripDays
+      final limit = (selectedExploreCab?['upto_km_limit'] as num?)?.toDouble() ??
+          (selectedExploreCab?['upto_km'] as num?)?.toDouble() ??
+          0.0;
+      return limit * tripDaysNum;
+    }
+    // Airport / Local rental
+    final upto = (selectedExploreCab?['upto_km'] as num?)?.toDouble() ?? 0.0;
+    if (upto > 0) return upto;
+    return (selectedExploreCab?['totalKm'] as num?)?.toDouble() ?? totalKm;
+  }
+
+
+  double get currentExtraKm {
+    if (tripMode == 0 || tripMode == 1) {
+      final diff = currentTotalKm - currentIncludedKm;
+      return diff > 0 ? diff : 0.0;
+    }
+    return 0.0;
+  }
+
+  double get perKmRate {
+    double rate = 0.0;
     if (tripMode == 1) {
       final pc =
           (selectedExploreCab?['trips'] as List?)
                   ?.firstOrNull?['priceCalculation']
               as List?;
+      final vt = selectedVehicle != null ? selectedVehicle!['vehicle_type'] : null;
+      final vtId = vt is Map ? vt['_id']?.toString() : vt?.toString();
       final matchedPc = pc?.firstWhereOrNull(
         (x) =>
-            x['vehicleId']?.toString() ==
-            selectedVehicle?['vehicle_type']?['_id']?.toString(),
+            x['vehicleId']?.toString() == vtId ||
+            x['vehicle_type_id']?.toString() == vtId,
       );
-      perKmRate =
+      rate =
           (matchedPc?['per_km_price'] as num?)?.toDouble() ??
           (matchedPc?['perKm'] as num?)?.toDouble() ??
           0.0;
-    } else {
-      perKmRate =
+    }
+    if (rate <= 0) {
+      rate =
           (selectedExploreCab?['per_km_price'] as num?)?.toDouble() ??
           (selectedExploreCab?['perKm'] as num?)?.toDouble() ??
           0.0;
     }
-    return displayExtraKm * perKmRate;
+    return rate;
   }
 
-  double get discountAmountComputed {
-    double servicesTotal = selectedServiceIds.fold(0.0, (sum, id) {
+  double get extraKMsCharge {
+    final extraKm = currentExtraKm;
+    if (extraKm <= 0) return 0.0;
+    return (extraKm * perKmRate).roundToDouble();
+  }
+
+  /// Recalculates driving distance using Google Maps when user selects pickup/drop address
+  Future<void> recalculateRouteDistance() async {
+    if (tripMode == 2) return; // Skip local rental
+    final pickupAddress = pickupController.text.trim();
+    final dropAddress = dropController.text.trim();
+
+    if (pickupAddress.isEmpty || dropAddress.isEmpty) return;
+
+    isCalculatingDistance = true;
+    update();
+
+    try {
+      final dist = await GooglePlacesHelper.calculateDrivingDistance(
+        origin: pickupAddress,
+        destination: dropAddress,
+        originLat: modifiedPickupLat,
+        originLng: modifiedPickupLng,
+        destLat: modifiedDropLat,
+        destLng: modifiedDropLng,
+        apiKey: StringConstants.gpooglePlaceKey,
+      );
+
+      if (dist != null && dist > 0) {
+        calculatedDistanceKm = dist;
+        print('[RouteDistance] Recalculated distance: $calculatedDistanceKm KM');
+      }
+    } catch (e) {
+      print('[RouteDistance] Error calculating distance: $e');
+    } finally {
+      isCalculatingDistance = false;
+      updateTotalFare();
+      update();
+    }
+  }
+
+  double get specialServicesTotal {
+    return selectedServiceIds.fold(0.0, (sum, id) {
       final svc = specialServices.firstWhereOrNull((s) => s['_id'] == id);
       final amt = (svc?['amount'] is num)
           ? (svc!['amount'] as num).toDouble()
-          : 0.0;
+          : (num.tryParse(svc?['amount']?.toString() ?? '0') ?? 0.0);
       return sum + amt;
     });
-    double preDiscountTotal = displayBaseFare + extraKMsCharge + servicesTotal;
+  }
+
+  double get preTaxFare {
+    return displayBaseFare + extraKMsCharge + specialServicesTotal;
+  }
+
+  double get discountAmountComputed {
     double discountAmount = 0.0;
     if (selectedOffer != null) {
       if (selectedOffer?['discount_type'] == '%') {
-        discountAmount = preDiscountTotal * (discountValue / 100);
+        discountAmount = preTaxFare * (discountValue / 100);
       } else {
         discountAmount = discountValue;
       }
@@ -2179,16 +2703,7 @@ class HomeController extends GetxController {
   }
 
   double get gstAmount {
-    double servicesTotal = selectedServiceIds.fold(0.0, (sum, id) {
-      final svc = specialServices.firstWhereOrNull((s) => s['_id'] == id);
-      final amt = (svc?['amount'] is num)
-          ? (svc!['amount'] as num).toDouble()
-          : 0.0;
-      return sum + amt;
-    });
-    double preDiscountTotal = displayBaseFare + extraKMsCharge + servicesTotal;
-    double discountAmount = discountAmountComputed;
-    double farePostDiscount = preDiscountTotal - discountAmount;
+    double farePostDiscount = preTaxFare - discountAmountComputed;
     double gp = gstPercent;
     return gp > 0 ? (farePostDiscount * gp / 100).round().toDouble() : 0.0;
   }

@@ -17,12 +17,287 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:path_provider/path_provider.dart';
+import 'package:bam_bam_user/app/widgets/facility_icon_widget.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-class BookinghistoryDetilesScreen extends StatelessWidget {
+class BookinghistoryDetilesScreen extends StatefulWidget {
   const BookinghistoryDetilesScreen({super.key});
+
+  @override
+  State<BookinghistoryDetilesScreen> createState() =>
+      _BookinghistoryDetilesScreenState();
+}
+
+class _BookinghistoryDetilesScreenState
+    extends State<BookinghistoryDetilesScreen> {
+  int _selectedFacilityTab = 0;
+
+  String _cleanHtml(String htmlString) {
+    return htmlString
+        .replaceAll(RegExp(r'<[^>]*>'), '')
+        .replaceAll('&nbsp;', ' ')
+        .replaceAll('&amp;', '&')
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .replaceAll('&quot;', '"')
+        .trim();
+  }
+
+  Widget _buildFacilitiesCard({
+    required List<dynamic> includeFacilities,
+    required List<dynamic> excludeFacilities,
+    required List<dynamic> vehicleFeatures,
+    required String termsConditions,
+  }) {
+    final tabTitles = [
+      "Inclusion",
+      "Exclusion",
+      "Facility",
+      "Terms & Condition"
+    ];
+
+    Widget buildTabButton(int index) {
+      final isSelected = _selectedFacilityTab == index;
+      return GestureDetector(
+        onTap: () {
+          setState(() {
+            _selectedFacilityTab = index;
+          });
+        },
+        child: Container(
+          height: 38,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: isSelected ? Colors.white : Colors.transparent,
+            borderRadius: BorderRadius.circular(6),
+            boxShadow: isSelected
+                ? [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.06),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    )
+                  ]
+                : null,
+          ),
+          child: Text(
+            tabTitles[index],
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+              color: isSelected
+                  ? ColorsValue.appColor
+                  : const Color(0xFF6B7280),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: ColorsValue.l4CB,
+        borderRadius: BorderRadius.circular(Dimens.twelve),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 2x2 Tab bar
+          Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: const Color(0xFFE5EDF4),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Expanded(child: buildTabButton(0)),
+                    const SizedBox(width: 6),
+                    Expanded(child: buildTabButton(1)),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Expanded(child: buildTabButton(2)),
+                    const SizedBox(width: 6),
+                    Expanded(child: buildTabButton(3)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Tab content
+          Builder(
+            builder: (_) {
+              if (_selectedFacilityTab == 0) {
+                // Inclusion
+                if (includeFacilities.isEmpty) {
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: Text(
+                      "No inclusions specified",
+                      style: TextStyle(fontSize: 13, color: Color(0xFF9CA3AF)),
+                    ),
+                  );
+                }
+                return Wrap(
+                  spacing: 16,
+                  runSpacing: 12,
+                  children: includeFacilities.map((item) {
+                    final text = item is Map
+                        ? (item['facility_description'] ?? '')
+                        : item.toString();
+                    final logo = item is Map ? item['logo'] : null;
+                    return Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        FacilityIconWidget(
+                          logo: logo,
+                          text: text,
+                          type: 'inclusion',
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          text,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w400,
+                            color: Color(0xFF1F2937),
+                          ),
+                        ),
+                      ],
+                    );
+                  }).toList(),
+                );
+              } else if (_selectedFacilityTab == 1) {
+                // Exclusion
+                if (excludeFacilities.isEmpty) {
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: Text(
+                      "No exclusions specified",
+                      style: TextStyle(fontSize: 13, color: Color(0xFF9CA3AF)),
+                    ),
+                  );
+                }
+                return Wrap(
+                  spacing: 16,
+                  runSpacing: 12,
+                  children: excludeFacilities.map((item) {
+                    final text = item is Map
+                        ? (item['facility_description'] ?? '')
+                        : item.toString();
+                    final logo = item is Map ? item['logo'] : null;
+                    return Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        FacilityIconWidget(
+                          logo: logo,
+                          text: text,
+                          type: 'exclusion',
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          text,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w400,
+                            color: Color(0xFF1F2937),
+                          ),
+                        ),
+                      ],
+                    );
+                  }).toList(),
+                );
+              } else if (_selectedFacilityTab == 2) {
+                // Facility
+                if (vehicleFeatures.isEmpty) {
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: Text(
+                      "No facilities specified",
+                      style: TextStyle(fontSize: 13, color: Color(0xFF9CA3AF)),
+                    ),
+                  );
+                }
+                return Wrap(
+                  spacing: 16,
+                  runSpacing: 12,
+                  children: vehicleFeatures.map((item) {
+                    final text = item is Map
+                        ? (item['feature_description'] ?? '')
+                        : item.toString();
+                    final logo = item is Map ? item['logo'] : null;
+                    return Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        FacilityIconWidget(
+                          logo: logo,
+                          text: text,
+                          type: 'feature',
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          text,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w400,
+                            color: Color(0xFF1F2937),
+                          ),
+                        ),
+                      ],
+                    );
+                  }).toList(),
+                );
+              } else {
+                // Terms & Condition
+                final cleanTerms = _cleanHtml(termsConditions);
+                if (cleanTerms.isEmpty) {
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: Text(
+                      "Standard terms and conditions apply.",
+                      style: TextStyle(fontSize: 13, color: Color(0xFF6B7280)),
+                    ),
+                  );
+                }
+                return Text(
+                  cleanTerms,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    height: 1.5,
+                    color: Color(0xFF374151),
+                  ),
+                );
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -69,9 +344,14 @@ class BookinghistoryDetilesScreen extends StatelessWidget {
           );
         }
         final vehicleNumber = data["vehiclesDetails"]?["vehicle_number"] ?? "—";
-        final fuelType =
-            (data["vehiclesDetails"]?["fuel_type"] as List?)?.first?["name"] ??
-            "—";
+        final rawFuel = data["vehiclesDetails"]?["fuel_type"];
+        final fuelType = (rawFuel is List)
+            ? rawFuel
+                .map((item) =>
+                    item is Map ? (item["name"] ?? "") : item.toString())
+                .where((s) => s.isNotEmpty)
+                .join(", ")
+            : (rawFuel?.toString() ?? "—");
         final modelYear =
             data["vehiclesDetails"]?["vehicle_make_year"]?.toString() ?? "—";
 
@@ -123,11 +403,40 @@ class BookinghistoryDetilesScreen extends StatelessWidget {
             ? "${vehicle["vehicle_type"]["name"]}"
             : null;
 
-        final vehicleTypeForFeatures = vehicle["vehicle_type"] ?? {};
-        final statesList = vehicleTypeForFeatures["states"] as List<dynamic>? ?? [];
-        final features = statesList.isNotEmpty ? (statesList[0]["vehicleFeatures"] as List<dynamic>? ?? []) : [];
+        final vehicleTypeObj = (data["vehiclesDetails"]?["vehicle_type"] is Map)
+            ? (data["vehiclesDetails"]["vehicle_type"] as Map)
+            : (data["vehicleDetails"]?["vehicle_type"] is Map)
+                ? (data["vehicleDetails"]["vehicle_type"] as Map)
+                : (data["exploreCabsDetails"]?["vehicle_type"] is Map)
+                    ? (data["exploreCabsDetails"]["vehicle_type"] as Map)
+                    : (data["travelDetails"]?["vehicle_type"] is Map)
+                        ? (data["travelDetails"]["vehicle_type"] as Map)
+                        : (vehicle["vehicle_type"] is Map
+                            ? (vehicle["vehicle_type"] as Map)
+                            : {});
+
+        final statesList = (vehicleTypeObj["states"] as List?) ?? [];
+        final state = statesList.isNotEmpty && statesList[0] is Map
+            ? (statesList[0] as Map)
+            : {};
+        final includeFacilities = (state["includeFacilities"] as List?) ?? [];
+        final excludeFacilities = (state["excludeFacilities"] as List?) ?? [];
+        final vehicleFeatures = (state["vehicleFeatures"] as List?) ?? [];
+        final termsConditions = state["terms_conditions"]?.toString() ?? '';
+
+        final features = vehicleFeatures.isNotEmpty
+            ? vehicleFeatures
+            : (statesList.isNotEmpty && statesList[0] is Map
+                ? (statesList[0]["vehicleFeatures"] as List<dynamic>? ?? [])
+                : []);
         final tripTrackingOtp = data["trip_tracking_otp"].toString();
         final statusLower = bookingStatus.toLowerCase();
+        final bool showAllocatedVehicleDetails = statusLower == "d & v allocated" ||
+            statusLower.contains("alloc") ||
+            statusLower == "driver arrived" ||
+            statusLower == "ongoing" ||
+            statusLower.contains("complete") ||
+            (statusLower == "confirmed" && (data['driverDetails'] != null || data['driver_id'] != null));
         final bool isEditable = !statusLower.contains("complete") &&
                                 !statusLower.contains("ongoing") &&
                                 !statusLower.contains("cancel") &&
@@ -189,18 +498,10 @@ class BookinghistoryDetilesScreen extends StatelessWidget {
                          travel["offer_discount"]?.toString() ?? "0";
         final discountAmount = double.tryParse(discount) ?? 0.0;
         
-        final incKms = travel["total_limit_km"]?.toString() ?? "0";
+        final incKms = travel["total_limit_km"]?.toString() ?? travel["km_included"]?.toString() ?? fareSummary["included_km"]?.toString() ?? "0";
         final couponCode = data["offersDetails"]?["offer_code"]?.toString() ?? "";
         final ssPriceRaw = fareSummary["special_services"]?.toString() ?? data['amount']?['specialServicesPrice']?.toString() ?? "0";
         final specialServicesPrice = double.tryParse(ssPriceRaw) ?? 0.0;
-
-        final gst = (fareSummary["gst_amount"] ?? fareSummary["gst_included"])?.toString() ?? "0";
-        double gstAmount = double.tryParse(gst) ?? 0.0;
-        if (gstAmount == 0 && data['amount'] != null) {
-          final c = double.tryParse(data['amount']['cgst']?.toString() ?? '0') ?? 0.0;
-          final s = double.tryParse(data['amount']['sgst']?.toString() ?? '0') ?? 0.0;
-          gstAmount = c + s;
-        }
 
         final double totalPayNum = double.tryParse(totalPayment) ?? 0.0;
         final gstPctRaw = fareSummary["gst_percent"]?.toString() ?? "5";
@@ -215,29 +516,20 @@ class BookinghistoryDetilesScreen extends StatelessWidget {
             ? (controller.elapsedSeconds ~/ 60)
             : waitingMins;
 
-        final double rawPendingPaymentVal = double.tryParse(pendingPayment) ?? 0.0;
-        final double rawTotalPaymentVal = double.tryParse(totalPayment) ?? 0.0;
-
-        final double livePendingPaymentVal = statusLower == "driver arrived"
-            ? (rawPendingPaymentVal + displayWaitingCharge)
-            : rawPendingPaymentVal;
-
-        final double liveTotalPaymentVal = statusLower == "driver arrived"
-            ? (rawTotalPaymentVal + displayWaitingCharge)
-            : rawTotalPaymentVal;
-
-        final int livePendingAmountForPay = livePendingPaymentVal.round();
-
         double displayBaseFare = baseFare;
-        if (totalPayNum > 0) {
+        double gstAmount = double.tryParse((fareSummary["gst_amount"] ?? fareSummary["gst_included"])?.toString() ?? "0") ?? 0.0;
+        if (gstAmount == 0 && data['amount'] != null) {
+          final c = double.tryParse(data['amount']['cgst']?.toString() ?? '0') ?? 0.0;
+          final s = double.tryParse(data['amount']['sgst']?.toString() ?? '0') ?? 0.0;
+          gstAmount = c + s;
+        }
+        if (displayBaseFare == 0 && totalPayNum > 0) {
           final double taxableSubtotal = (gstPercent > 0)
               ? (totalPayNum / (1 + gstPercent / 100)).roundToDouble()
               : totalPayNum;
-          gstAmount = totalPayNum - taxableSubtotal;
+          if (gstAmount == 0) gstAmount = totalPayNum - taxableSubtotal;
           displayBaseFare = taxableSubtotal - specialServicesPrice + discountAmount;
         }
-
-        final gstPct = gstPercent.toStringAsFixed(1).replaceAll(RegExp(r'\.0$'), '');
 
         final fbMap = data['vendorRequestDetails']?['fare_breakdown'] ?? data['fare_breakdown'] ?? travel['fare_breakdown'];
         final bool isCompletedTrip = statusLower.contains("complete") || statusLower == "payment pending";
@@ -254,6 +546,80 @@ class BookinghistoryDetilesScreen extends StatelessWidget {
         final double fbGstPercent = double.tryParse(fbMap?['gst_percent']?.toString() ?? "5") ?? 5.0;
         final double fbFinalPayable = double.tryParse(fbMap?['final_payable_amount']?.toString() ?? "0") ?? 0.0;
         final double actualDistKm = double.tryParse((data['actual_distance_km'] ?? data['vendorRequestDetails']?['actual_distance_km'] ?? "0").toString()) ?? 0.0;
+
+        // Unified values matching Website BookingDetail.jsx
+        final double effectiveBaseFare = hasFbData
+            ? (fbBaseFare > 0 ? fbBaseFare : displayBaseFare)
+            : (displayBaseFare > 0 ? displayBaseFare : baseFare);
+
+        final double effectiveCalculatedKm = controller.calculatedDistanceKm ?? 0.0;
+        final double rawTotalDistanceKm = hasFbData
+            ? (double.tryParse((fbMap?['total_distance_km'] ?? fbMap?['actual_distance_km'] ?? data['vendorRequestDetails']?['actual_distance_km'] ?? actualDistKm).toString()) ?? 0.0)
+            : (double.tryParse((travel['actual_distance_km'] ?? fareSummary['actual_km'] ?? fareSummary['total_distance_km'] ?? data['exploreCabsDetails']?['totalKm'] ?? travel['distance_km'] ?? travel['distance'] ?? "0").toString()) ?? 0.0);
+
+        final double totalDistanceKm = rawTotalDistanceKm > 0
+            ? rawTotalDistanceKm
+            : (effectiveCalculatedKm > 0 ? effectiveCalculatedKm : 0.0);
+
+        final double includedKm = hasFbData
+            ? (double.tryParse((fbMap?['included_km'] ?? fareSummary['included_km'] ?? travel['km_included'] ?? travel['total_limit_km'] ?? "0").toString()) ?? 0.0)
+            : (double.tryParse((fareSummary['included_km'] ?? travel['km_included'] ?? travel['total_limit_km'] ?? data['exploreCabsDetails']?['totalKm'] ?? incKms).toString()) ?? 0.0);
+
+        final double perKmPrice = hasFbData
+            ? (fbPerKmPrice > 0 ? fbPerKmPrice : (double.tryParse((fareSummary['per_km_price'] ?? "0").toString()) ?? 0.0))
+            : (double.tryParse((fareSummary['per_km_price'] ?? data['exploreCabsDetails']?['per_km_price'] ?? data['exploreCabsDetails']?['perKm'] ?? data['vehicleDetails']?['vehicle_type']?['states']?[0]?['cities']?[0]?['per_km_price'] ?? "11").toString()) ?? 11.0);
+
+        // extraKm: use saved values from database if available!
+        final double savedExtraKm = double.tryParse((fareSummary['extra_km'] ?? travel['extra_km'] ?? "0").toString()) ?? 0.0;
+        final double computedExtraKm = (totalDistanceKm > includedKm && includedKm > 0) ? (totalDistanceKm - includedKm) : 0.0;
+        final double extraKm = hasFbData
+            ? fbExtraKm
+            : (savedExtraKm > 0 ? savedExtraKm : computedExtraKm);
+
+        final double savedExtraKmCharge = double.tryParse((fareSummary['extra_km_charge'] ?? travel['extra_km_charge'] ?? "0").toString()) ?? 0.0;
+        final double extraKmCharge = hasFbData
+            ? fbExtraKmCharge
+            : (savedExtraKmCharge > 0 ? savedExtraKmCharge : (extraKm * perKmPrice).roundToDouble());
+
+        final double startKm = double.tryParse((data['vendorRequestDetails']?['start_km'] ?? fbMap?['start_km'] ?? "0").toString()) ?? 0.0;
+        final double endKm = double.tryParse((data['vendorRequestDetails']?['end_km'] ?? fbMap?['end_km'] ?? "0").toString()) ?? 0.0;
+
+        final double effectiveWaitingCharge = hasFbData ? fbWaitingCharge : displayWaitingCharge;
+        final double effectiveDiscount = hasFbData && fbDiscountAmount > 0 ? fbDiscountAmount : discountAmount;
+
+        final double savedTotalBeforeTax = double.tryParse((fareSummary['total_fare_before_tax'] ?? travel['total_fare_before_tax'] ?? "0").toString()) ?? 0.0;
+        final double totalFareBeforeTax = (hasFbData && fbMap?['total_fare_before_tax'] != null)
+            ? (double.tryParse(fbMap!['total_fare_before_tax'].toString()) ?? 0.0)
+            : (savedTotalBeforeTax > 0
+                ? savedTotalBeforeTax
+                : ((effectiveBaseFare + extraKmCharge + specialServicesPrice + effectiveWaitingCharge - effectiveDiscount).clamp(0.0, double.infinity)));
+
+        final double effectiveGstPercent = hasFbData ? fbGstPercent : gstPercent;
+        final double savedGstAmount = double.tryParse((fareSummary['gst_amount'] ?? travel['gst_amount'] ?? "0").toString()) ?? 0.0;
+        final double effectiveGstAmount = (hasFbData && fbGstAmount > 0)
+            ? fbGstAmount
+            : (savedGstAmount > 0
+                ? savedGstAmount
+                : (effectiveGstPercent > 0 ? ((totalFareBeforeTax * effectiveGstPercent) / 100).roundToDouble() : gstAmount));
+
+        final List additionalChargesList = (fbMap?['additional_charges_details'] is List)
+            ? (fbMap!['additional_charges_details'] as List)
+            : [];
+        final double additionalChargesTotal = hasFbData
+            ? ((double.tryParse(fbMap?['additional_service_charges']?.toString() ?? "0") ?? 0.0) +
+                additionalChargesList.fold<double>(0.0, (sum, item) => sum + (double.tryParse(item?['amount']?.toString() ?? "0") ?? 0.0)))
+            : 0.0;
+
+        final double savedTotalFare = double.tryParse((fareSummary['total_fare'] ?? data['total_payment'] ?? travel['total_fare'] ?? "0").toString()) ?? 0.0;
+        final double calculatedTotalPayment = (hasFbData && fbFinalPayable > 0)
+            ? fbFinalPayable
+            : (savedTotalFare > 0
+                ? (savedTotalFare + additionalChargesTotal)
+                : (totalFareBeforeTax + effectiveGstAmount + additionalChargesTotal));
+
+        final double paidAmountVal = double.tryParse((data['sub_total_payment'] ?? paidAmount ?? "0").toString()) ?? 0.0;
+        final double displayPendingPaymentVal = (calculatedTotalPayment - paidAmountVal).clamp(0.0, double.infinity);
+        final int livePendingAmountForPay = displayPendingPaymentVal.round();
 
         String formatAmt(double val) {
           if (val % 1 == 0) {
@@ -440,15 +806,14 @@ class BookinghistoryDetilesScreen extends StatelessWidget {
                 padding: Dimens.edgeInsets20,
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text("Booking ID", style: Styles.txtG7Colors40014),
-                          Text(bookingId, style: Styles.txtBlackColorW60016, overflow: TextOverflow.ellipsis),
-                        ],
-                      ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text("Booking ID", style: Styles.txtG7Colors40014),
+                        Text(bookingId, style: Styles.txtBlackColorW60016),
+                      ],
                     ),
                     Dimens.boxWidth8,
                     Flexible(
@@ -456,20 +821,24 @@ class BookinghistoryDetilesScreen extends StatelessWidget {
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
                           image: DecorationImage(
-                            fit: BoxFit.cover,
+                            fit: BoxFit.fill,
                             image: AssetImage(badgeImage),
                           ),
                         ),
-                        child: Padding(
-                          padding: Dimens.edgeInsets10,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
                           child: Text(
                             displayStatusText,
                             textAlign: TextAlign.center,
                             maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
                             style: Styles.txtGreenColorW60014.copyWith(
                               color: textColor,
-                              fontSize: displayStatusText.length > 15 ? 11 : 13,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                         ),
@@ -576,18 +945,24 @@ class BookinghistoryDetilesScreen extends StatelessWidget {
                   children: [
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text("Vehicle", style: Styles.txtG7Colors40014),
-                            Text(brandName, style: Styles.txtBlackColorW60016),
-                            Text(
-                              vehicleName.toString(),
-                              style: Styles.txtG7Colors40014,
-                            ),
-                          ],
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text("Vehicle", style: Styles.txtG7Colors40014),
+                              Text(brandName, style: Styles.txtBlackColorW60016),
+                              Text(
+                                vehicleName.toString(),
+                                style: Styles.txtG7Colors40014,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
                         ),
+                        const SizedBox(width: 8),
 
                         if (carPhoto != null)
                           ClipRRect(
@@ -650,7 +1025,7 @@ class BookinghistoryDetilesScreen extends StatelessWidget {
                         );
                       }).toList(),
                     ),
-                    if (statusLower == "d & v allocated" || statusLower == "driver arrived" || statusLower == "ongoing" || statusLower == "completed" || (vehicleNumber != "—" && vehicleNumber.isNotEmpty)) ...[
+                    if (showAllocatedVehicleDetails && vehicleNumber != "—" && vehicleNumber.isNotEmpty) ...[
                       const Padding(
                         padding: EdgeInsets.symmetric(vertical: 10.0),
                         child: Divider(height: 1, color: Colors.grey),
@@ -679,6 +1054,19 @@ class BookinghistoryDetilesScreen extends StatelessWidget {
 
               Dimens.boxHeight16,
 
+              if (includeFacilities.isNotEmpty ||
+                  excludeFacilities.isNotEmpty ||
+                  vehicleFeatures.isNotEmpty ||
+                  termsConditions.trim().isNotEmpty) ...[
+                _buildFacilitiesCard(
+                  includeFacilities: includeFacilities,
+                  excludeFacilities: excludeFacilities,
+                  vehicleFeatures: vehicleFeatures,
+                  termsConditions: termsConditions,
+                ),
+                Dimens.boxHeight16,
+              ],
+
               Container(
                 decoration: BoxDecoration(
                   color: Colors.white,
@@ -701,7 +1089,7 @@ class BookinghistoryDetilesScreen extends StatelessWidget {
                       children: [
                         Text(
                           "Traveler Details",
-                          style: Styles.whiteColorW70014.copyWith(fontSize: 18),
+                          style: Styles.txtBlackColorW70018,
                         ),
                         if (isEditable)
                           IconButton(
@@ -834,7 +1222,7 @@ class BookinghistoryDetilesScreen extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text("Driver Details", style: Styles.whiteColorW70014),
+                          Text("Driver Details", style: Styles.txtBlackColorW70018),
                           Dimens.boxHeight12,
 
                           Row(
@@ -1050,224 +1438,288 @@ class BookinghistoryDetilesScreen extends StatelessWidget {
                   children: [
                     Text("Fare Summary", style: Styles.txtBlackColorW60016),
                     Dimens.boxHeight12,
-                    
-                    if (hasFbData) ...[
-                      if (fbBaseFare > 0) ...[
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text("Base Fare", style: Styles.txtG7Colors40014),
-                            Text("₹${formatAmt(fbBaseFare)}", style: Styles.txtBlackColorW40014),
-                          ],
-                        ),
-                        Dimens.boxHeight10,
-                      ],
-                      if (fbWaitingCharge > 0) ...[
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text("Waiting Charges", style: Styles.txtG7Colors40014),
-                            Text("₹${formatAmt(fbWaitingCharge)}", style: Styles.txtBlackColorW40014),
-                          ],
-                        ),
-                        Dimens.boxHeight10,
-                      ],
-                      if (actualDistKm > 0) ...[
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text("Total Distance", style: Styles.txtG7Colors40014),
-                            Text("${formatAmt(actualDistKm)} KM", style: Styles.txtBlackColorW40014),
-                          ],
-                        ),
-                        Dimens.boxHeight10,
-                      ],
-                      if (fbExtraKm > 0) ...[
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text("Extra KM", style: Styles.txtG7Colors40014),
-                            Text("${formatAmt(fbExtraKm)} KM", style: Styles.txtBlackColorW40014),
-                          ],
-                        ),
-                        Dimens.boxHeight10,
-                      ],
-                      if (fbPerKmPrice > 0 && fbExtraKm > 0) ...[
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text("Per KM Rate", style: Styles.txtG7Colors40014),
-                            Text("₹${formatAmt(fbPerKmPrice)}/KM", style: Styles.txtBlackColorW40014),
-                          ],
-                        ),
-                        Dimens.boxHeight10,
-                      ],
-                      if (fbExtraKmCharge > 0) ...[
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text("Extra KM Charges", style: Styles.txtG7Colors40014),
-                            Text("₹${formatAmt(fbExtraKmCharge)}", style: Styles.txtBlackColorW40014),
-                          ],
-                        ),
-                        Dimens.boxHeight10,
-                      ],
-                      if (fbDiscountAmount > 0) ...[
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(couponCode.isNotEmpty ? "Coupon Discount ($couponCode)" : "Coupon Discount", style: Styles.txtG7Colors40014.copyWith(color: Colors.green)),
-                            Text("- ₹${formatAmt(fbDiscountAmount)}", style: Styles.txtBlackColorW60016.copyWith(color: Colors.green)),
-                          ],
-                        ),
-                        Dimens.boxHeight10,
-                      ],
-                      if (fbGstAmount > 0) ...[
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text("GST (${fbGstPercent.toStringAsFixed(0)}%)", style: Styles.txtG7Colors40014),
-                            Text("₹${formatAmt(fbGstAmount)}", style: Styles.txtBlackColorW60016),
-                          ],
-                        ),
-                        Dimens.boxHeight10,
-                      ],
-                      Divider(color: ColorsValue.borderColors),
+
+                    // 1. Base Fare
+                    if (effectiveBaseFare > 0) ...[
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text("Payment Mode", style: Styles.txtBlackColorW40014),
-                          Text(paymentMode, style: Styles.txtBlackColorW60016),
+                          Text("Base Fare", style: Styles.txtG7Colors40014),
+                          Text("₹${formatAmt(effectiveBaseFare)}", style: Styles.txtBlackColorW60016),
                         ],
                       ),
-                      Divider(color: ColorsValue.borderColors),
+                      Dimens.boxHeight10,
+                    ],
+
+                    // 2. Total Distance
+                    if (totalDistanceKm > 0 || controller.isCalculatingDistance) ...[
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text("Total Fare", style: Styles.txtBlackColorW60016),
-                          Text("₹${formatAmt(fbFinalPayable)}", style: Styles.txtBlackColorW60016),
+                          Text("Total Distance", style: Styles.txtG7Colors40014),
+                          controller.isCalculatingDistance
+                              ? const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : Text("${formatAmt(totalDistanceKm)} km", style: Styles.txtBlackColorW60016),
                         ],
                       ),
-                    ] else ...[
-                      if (displayBaseFare > 0) ...[
+                      Dimens.boxHeight10,
+                    ],
+
+                    // 3. Start Meter / End Meter
+                    if (isCompletedTrip && startKm > 0) ...[
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text("Start Meter", style: Styles.txtG7Colors40014),
+                          Text("${formatAmt(startKm)} km", style: Styles.txtBlackColorW60016),
+                        ],
+                      ),
+                      Dimens.boxHeight10,
+                    ],
+                    if (isCompletedTrip && endKm > 0) ...[
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text("End Meter", style: Styles.txtG7Colors40014),
+                          Text("${formatAmt(endKm)} km", style: Styles.txtBlackColorW60016),
+                        ],
+                      ),
+                      Dimens.boxHeight10,
+                    ],
+
+                    // 4. Included KM
+                    if (includedKm > 0) ...[
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text("Included KM", style: Styles.txtG7Colors40014),
+                          Text("${formatAmt(includedKm)} km", style: Styles.txtBlackColorW60016),
+                        ],
+                      ),
+                      Dimens.boxHeight10,
+                    ],
+
+                    // 5. Extra KM
+                    if (extraKm > 0) ...[
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text("Extra KM", style: Styles.txtG7Colors40014),
+                          Text("${formatAmt(extraKm)} km", style: Styles.txtBlackColorW60016),
+                        ],
+                      ),
+                      Dimens.boxHeight10,
+                    ],
+
+                    // 6. Per KM Rate
+                    if (perKmPrice > 0 && extraKm > 0) ...[
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text("Per KM Rate", style: Styles.txtG7Colors40014),
+                          Text("₹${formatAmt(perKmPrice)}/km", style: Styles.txtBlackColorW60016),
+                        ],
+                      ),
+                      Dimens.boxHeight10,
+                    ],
+
+                    // 7. Extra KM Charges
+                    if (extraKmCharge > 0) ...[
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text("Extra KM Charges", style: Styles.txtG7Colors40014),
+                          Text("₹${formatAmt(extraKmCharge)}", style: Styles.txtBlackColorW60016),
+                        ],
+                      ),
+                      Dimens.boxHeight10,
+                    ],
+
+                    // 8. Special Services
+                    if (specialServicesPrice > 0 || services.isNotEmpty) ...[
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text("Special Services", style: Styles.txtG7Colors40014.copyWith(fontWeight: FontWeight.w600)),
+                          Text("₹${formatAmt(specialServicesPrice)}", style: Styles.txtBlackColorW60016),
+                        ],
+                      ),
+                      Dimens.boxHeight6,
+                      for (var s in services) ...[
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text("Base Fare", style: Styles.txtG7Colors40014),
-                            Text("₹${displayBaseFare.toStringAsFixed(0)}", style: Styles.txtBlackColorW40014),
-                          ],
-                        ),
-                        Dimens.boxHeight10,
-                      ],
-                      
-                      if (incKms != "0" && incKms.isNotEmpty) ...[
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text("Included KMs", style: Styles.txtG7Colors40014),
-                            Text("$incKms KM", style: Styles.txtBlackColorW40014),
-                          ],
-                        ),
-                        Dimens.boxHeight10,
-                      ],
-                      
-                      if (specialServicesPrice > 0 || services.isNotEmpty) ...[
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text("Special Services", style: Styles.txtG7Colors40014.copyWith(fontWeight: FontWeight.w600)),
-                            Text("₹${specialServicesPrice.toStringAsFixed(0)}", style: Styles.txtBlackColorW60016),
+                            Text("   ➔ ${s["description"] ?? "Service"}", style: Styles.txtG7Colors40014.copyWith(fontSize: 13, color: Colors.grey[600])),
+                            Text("₹${s["amount"] ?? 0}", style: Styles.txtBlackColorW40014.copyWith(fontSize: 13, color: Colors.grey[600])),
                           ],
                         ),
                         Dimens.boxHeight6,
-                        for (var s in services) ...[
+                      ],
+                      Dimens.boxHeight4,
+                    ],
+
+                    // 9. Coupon Discount
+                    if (effectiveDiscount > 0) ...[
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            couponCode.isNotEmpty ? "Coupon Discount ($couponCode)" : "Coupon Discount",
+                            style: Styles.txtG7Colors40014.copyWith(color: Colors.green),
+                          ),
+                          Text("- ₹${formatAmt(effectiveDiscount)}", style: Styles.txtBlackColorW60016.copyWith(color: Colors.green)),
+                        ],
+                      ),
+                      Dimens.boxHeight10,
+                    ],
+
+                    // 10. Waiting Charges
+                    if (effectiveWaitingCharge > 0) ...[
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            statusLower == "driver arrived"
+                                ? "Waiting Charges (Live)"
+                                : (displayWaitingMins > 0 ? "Waiting Charges ($displayWaitingMins min)" : "Waiting Charges"),
+                            style: Styles.txtG7Colors40014.copyWith(color: Colors.red[700]),
+                          ),
+                          Text("₹${formatAmt(effectiveWaitingCharge)}", style: Styles.txtBlackColorW60016.copyWith(color: Colors.red[700])),
+                        ],
+                      ),
+                      Dimens.boxHeight10,
+                    ],
+
+                    // 11. Total Fare (Before Tax) with dashed border above
+                    if (effectiveGstAmount > 0 && totalFareBeforeTax > 0) ...[
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          final boxWidth = constraints.constrainWidth();
+                          const dashWidth = 5.0;
+                          const dashSpace = 4.0;
+                          final dashCount = (boxWidth / (dashWidth + dashSpace)).floor();
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8.0),
+                            child: Flex(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              direction: Axis.horizontal,
+                              children: List.generate(dashCount, (_) {
+                                return const SizedBox(
+                                  width: dashWidth,
+                                  height: 1,
+                                  child: DecoratedBox(
+                                    decoration: BoxDecoration(color: Color(0xFFBDBDBD)),
+                                  ),
+                                );
+                              }),
+                            ),
+                          );
+                        },
+                      ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text("Total Fare (Before Tax)", style: Styles.txtBlackColorW60016),
+                          Text(
+                            "₹${formatAmt(totalFareBeforeTax)}",
+                            style: Styles.txtBlackColorW60016.copyWith(
+                              color: ColorsValue.appColor,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                      Dimens.boxHeight10,
+                    ],
+
+                    // 12. GST
+                    if (effectiveGstAmount > 0) ...[
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text("GST (${effectiveGstPercent.toStringAsFixed(1).replaceAll(RegExp(r'\.0$'), '')}%)", style: Styles.txtG7Colors40014),
+                          Text("₹${formatAmt(effectiveGstAmount)}", style: Styles.txtBlackColorW60016),
+                        ],
+                      ),
+                      Dimens.boxHeight10,
+                    ],
+
+                    // 13. Additional Charges (AFTER GST, exactly matching Website)
+                    if (additionalChargesList.isNotEmpty) ...[
+                      for (final ch in additionalChargesList)
+                        if (ch is Map && ch['amount'] != null) ...[
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Text("   ➔ ${s["description"] ?? "Service"}", style: Styles.txtG7Colors40014.copyWith(fontSize: 13, color: Colors.grey[600])),
-                              Text("₹${s["amount"] ?? 0}", style: Styles.txtBlackColorW40014.copyWith(fontSize: 13, color: Colors.grey[600])),
+                              Text(ch['title']?.toString() ?? "Additional Charge", style: Styles.txtG7Colors40014),
+                              Text("₹${formatAmt(double.tryParse(ch['amount'].toString()) ?? 0.0)}", style: Styles.txtBlackColorW60016),
                             ],
                           ),
-                          Dimens.boxHeight6,
+                          Dimens.boxHeight10,
                         ],
-                        Dimens.boxHeight4,
-                      ],
-                      
-                      if (discountAmount > 0) ...[
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(couponCode.isNotEmpty ? "Coupon Discount ($couponCode)" : "Coupon Discount", style: Styles.txtG7Colors40014.copyWith(color: Colors.green)),
-                            Text("- ₹${discountAmount.toStringAsFixed(0)}", style: Styles.txtBlackColorW60016.copyWith(color: Colors.green)),
-                          ],
-                        ),
-                        Dimens.boxHeight10,
-                      ],
-
-                      if (gstAmount > 0) ...[
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text("GST ($gstPct%)", style: Styles.txtG7Colors40014),
-                            Text("₹${gstAmount.toStringAsFixed(0)}", style: Styles.txtBlackColorW60016),
-                          ],
-                        ),
-                        Dimens.boxHeight10,
-                      ],
-
-                      if (displayWaitingCharge > 0) ...[
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text("Waiting Charges (${displayWaitingMins} min)", style: Styles.txtG7Colors40014.copyWith(color: Colors.red[700])),
-                            Text("₹${displayWaitingCharge.toStringAsFixed(0)}", style: Styles.txtBlackColorW60016.copyWith(color: Colors.red[700])),
-                          ],
-                        ),
-                        Dimens.boxHeight10,
-                      ],
-
-                      Divider(color: ColorsValue.borderColors),
+                    ] else if (additionalChargesTotal > 0) ...[
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text("Pending Payment", style: Styles.txtBlackColorW40014),
-                          Text("₹${livePendingPaymentVal.toStringAsFixed(0)}", style: Styles.txtBlackColorW60016),
+                          Text("Additional Charges", style: Styles.txtG7Colors40014),
+                          Text("₹${formatAmt(additionalChargesTotal)}", style: Styles.txtBlackColorW60016),
                         ],
                       ),
+                      Dimens.boxHeight10,
+                    ],
 
-                      Divider(color: ColorsValue.borderColors),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text("Payment Mode", style: Styles.txtBlackColorW40014),
-                          Text(paymentMode, style: Styles.txtBlackColorW60016),
-                        ],
-                      ),
-                      
-                      Divider(color: ColorsValue.borderColors),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text("Advance Customer Pay", style: Styles.txtBlackColorW40014),
-                                Text("(Paid by Company)", style: Styles.txtG7Colors40014.copyWith(fontSize: 12)),
-                              ],
-                            ),
+                    Divider(color: ColorsValue.borderColors),
+
+                    // 14. Total Fare (After Tax)
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          effectiveGstAmount > 0 ? "Total Fare (After Tax)" : "Total Fare",
+                          style: Styles.txtBlackColorW60016,
+                        ),
+                        Text(
+                          "₹${formatAmt(calculatedTotalPayment)}",
+                          style: Styles.txtBlackColorW60016.copyWith(
+                            color: ColorsValue.appColor,
+                            fontWeight: FontWeight.bold,
                           ),
-                          Text("₹$paidAmount", style: Styles.txtBlackColorW60016),
-                        ],
-                      ),
-                      
-                      Divider(color: ColorsValue.borderColors),
+                        ),
+                      ],
+                    ),
+                    Dimens.boxHeight10,
+
+                    // 15. Payment Mode
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text("Payment Mode", style: Styles.txtG7Colors40014),
+                        Text(paymentMode, style: Styles.txtBlackColorW60016),
+                      ],
+                    ),
+                    Dimens.boxHeight10,
+
+                    // 16. Paid Amount
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text("Paid Amount", style: Styles.txtG7Colors40014),
+                        Text("₹${formatAmt(paidAmountVal)}", style: Styles.txtBlackColorW60016),
+                      ],
+                    ),
+
+                    // 17. Pending Payment (if any)
+                    if (displayPendingPaymentVal > 0) ...[
+                      Dimens.boxHeight10,
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text("Total Fare", style: Styles.txtBlackColorW60016),
-                          Text("₹${liveTotalPaymentVal.toStringAsFixed(0)}", style: Styles.txtBlackColorW60016),
+                          Text("Pending Payment", style: Styles.txtG7Colors40014),
+                          Text("₹${formatAmt(displayPendingPaymentVal)}", style: Styles.txtBlackColorW60016),
                         ],
                       ),
                     ],

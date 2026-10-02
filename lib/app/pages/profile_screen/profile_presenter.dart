@@ -253,6 +253,48 @@ class ProfilePresenter {
     }
   }
 
+  Future<ResponseModel> checkPhoneRegistered({
+    required String phoneNo,
+    bool showLoader = false,
+  }) async {
+    if (!await Utility.isNetworkAvailable()) {
+      return ResponseModel(
+        data: '{"message":"No internet connection"}',
+        hasError: true,
+        statusCode: 1000,
+      );
+    }
+
+    final uri = Uri.parse('${ApiWrapper.baseUrl}check-phone-registered');
+    if (showLoader) Utility.showLoader();
+
+    try {
+      final body = jsonEncode({'phone_no': phoneNo});
+      final response = await ApiWrapper.client
+          .post(
+            uri,
+            body: body,
+            headers: Utility.commonHeader(isDefaultAuthorizationKeyAdd: false),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      if (showLoader) Utility.closeDialog();
+
+      return ResponseModel(
+        data: response.body,
+        hasError: response.statusCode < 200 || response.statusCode >= 300,
+        statusCode: response.statusCode,
+      );
+    } catch (e) {
+      if (showLoader) Utility.closeDialog();
+      return ResponseModel(
+        data: '{"message":"Something went wrong"}',
+        hasError: true,
+      );
+    }
+  }
+
+
   /// View support ticket details (POST JSON with ticket_id)
   Future<ResponseModel> viewTicket({
     required String ticketId,

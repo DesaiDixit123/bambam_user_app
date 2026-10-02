@@ -108,32 +108,59 @@ Column(
   crossAxisAlignment: CrossAxisAlignment.start,
   children: [
     Text(
-      "Hello, ${controller.userName.split(' ').first} 🎉", // friendly short greeting
+      "Hello, ${controller.userName.isNotEmpty && controller.userName != 'User' ? controller.userName : 'User'} 🎉",
       style: Styles.whiteColorW50014,
     ),
     Dimens.boxHeight6,
- InkWell(
-  onTap: () {
-    // controller.showLocationList(context, locations);
-  },
-  child: Obx(() => Row(
-        children: [
-          Text(
-            controller.userCity.isNotEmpty &&
-                    controller.userCity != 'Select City'
-                ? controller.userCity
-                : controller.currentLocation.value,
-            style: Styles.txtBlackColorW70020.copyWith(color: ColorsValue.whiteColor),
-          ),
-          // Dimens.boxWidth5,
-          // const Icon(
-          //   Icons.keyboard_arrow_down_sharp,
-          //   color: Colors.white,
-          // ),
-        ],
-      )),
-)
-
+                        InkWell(
+                          onTap: () {
+                            controller.checkAndFetchCurrentLocation(forcePrompt: true);
+                          },
+                          borderRadius: BorderRadius.circular(6),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 2.0),
+                            child: Obx(() => Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.location_on_rounded,
+                                  size: 16,
+                                  color: controller.isLocationDisabled
+                                      ? Colors.orangeAccent
+                                      : Colors.white,
+                                ),
+                                const SizedBox(width: 4),
+                                ConstrainedBox(
+                                  constraints: BoxConstraints(
+                                    maxWidth: MediaQuery.of(context).size.width * 0.55,
+                                  ),
+                                  child: Text(
+                                    controller.isFetchingLocation
+                                        ? "Detecting location..."
+                                        : controller.isLocationDisabled
+                                            ? "Location Disabled (Tap to enable)"
+                                            : controller.currentLocation.value.isNotEmpty
+                                                ? controller.currentLocation.value
+                                                : "Choose Current Location",
+                                    style: Styles.txtBlackColorW70020.copyWith(
+                                      color: ColorsValue.whiteColor,
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                const SizedBox(width: 2),
+                                const Icon(
+                                  Icons.keyboard_arrow_down_rounded,
+                                  size: 18,
+                                  color: Colors.white70,
+                                ),
+                              ],
+                            )),
+                          ),
+                        ),
   ],
 ),
 

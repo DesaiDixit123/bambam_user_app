@@ -7,12 +7,12 @@ abstract class RouteManagement {
   static void gotoHomeScreen() => Get.offAllNamed<void>(Routes.homeScreen);
   static void goToInAppUpdateScreen(String appUrl) =>
       Get.offAllNamed<void>(Routes.inAppUpdateScreen, arguments: appUrl);
-  static void gotoLoginScreen() => Get.toNamed<void>(Routes.loginScreen);
+  static void gotoLoginScreen() => Get.offAllNamed<void>(Routes.loginScreen);
   static void gotoGetStartScreen() => Get.toNamed<void>(Routes.getStartScreen);
   static void gotoIntro1Screen() => Get.toNamed<void>(Routes.intro1Screen);
   static void gotoIntro2Screen() => Get.toNamed<void>(Routes.intro2Screen);
-  static void gotoOtpVerifyScreen() =>
-      Get.toNamed<void>(Routes.otpVerifyScreen);
+  static void gotoOtpVerifyScreen([String? phone]) =>
+      Get.toNamed<void>(Routes.otpVerifyScreen, arguments: phone);
   static void gotoBookingHistoryScreen(BuildContext context) =>
       Navigator.pushNamed(context, Routes.bookingHistoryScreen);
   //  Get.toNamed<void>(Routes.bookingHistoryScreen);

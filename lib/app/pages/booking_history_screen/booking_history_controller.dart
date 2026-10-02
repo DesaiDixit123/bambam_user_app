@@ -7,9 +7,8 @@ import 'package:flutter_rating_bar/flutter_rating_bar.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:get/get.dart';
 import 'package:bam_bam_user/app/app.dart';
+import 'package:bam_bam_user/app/utils/address_search_field.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
-
-
 
 class BookingHistoryController extends GetxController {
   BookingHistoryController(this.bookingHistoryPresenter);
@@ -19,7 +18,7 @@ late Razorpay _razorpay;
   bool _isFetchingBookings = false;
   String? error;
   List<Map<String, dynamic>> bookings = [];
-  String _selectedStatus = 'Completed'; // Default tab: Completed
+  String _selectedStatus = 'All'; // Default tab: All
   String get selectedStatus => _selectedStatus; // Public getter for UI
 
   bool matchesStatus(Map<String, dynamic> b, String targetStatus) {
@@ -32,7 +31,7 @@ late Razorpay _razorpay;
     } else if (target == 'pending') {
       return status.contains('pending');
     } else if (target == 'confirmed') {
-      return status.contains('confirm');
+      return status.contains('confirm') || status.contains('arrived') || status.contains('ongoing');
     } else if (target == 'd & v allocated') {
       return status.contains('alloc');
     } else if (target == 'cancelled') {
@@ -196,10 +195,9 @@ void _onPaymentSuccess(PaymentSuccessResponse response) async {
     }
   }
 
-  // New: Called by UI when status filter changes
   void onStatusChanged(String? status) {
     if (status == null) {
-      _selectedStatus = 'Completed';
+      _selectedStatus = 'All';
     } else {
       _selectedStatus = status;
     }
@@ -397,6 +395,85 @@ void _groupBookings() {
   List<Map<String, dynamic>> cancellationReasons = [];
   String? selectedReasonId;
   String? selectedReasonText;
+  double? calculatedDistanceKm;
+  bool isCalculatingDistance = false;
+
+  Future<void> _calculateRouteDistanceIfNeeded() async {
+    final travel = bookingDetails?['travelDetails'];
+    if (travel == null) return;
+
+    // 1. If distance is already saved in database, use it directly!
+    final double savedDist = double.tryParse((travel['fare_summary']?['actual_km'] ??
+            travel['actual_distance_km'] ??
+            travel['fare_summary']?['total_distance_km'] ??
+            travel['distance_km'] ??
+            travel['distance'] ??
+            bookingDetails?['exploreCabsDetails']?['totalKm'] ??
+            '')
+        .toString()) ?? 0.0;
+    if (savedDist > 0) {
+      calculatedDistanceKm = savedDist;
+      update();
+      return;
+    }
+
+    final tripType = (travel['trip_type'] ?? '').toString();
+    final bool isRoundTrip = tripType.toLowerCase().contains('round');
+
+    final pickup = (travel['pickup_address'] ?? '').toString().trim();
+    final dynamic dropRaw = travel['drop_address'];
+    String drop = '';
+    if (dropRaw is List) {
+      drop = dropRaw.where((e) => e != null && e.toString().trim().isNotEmpty).join(', ');
+    } else if (dropRaw != null) {
+      drop = dropRaw.toString().trim();
+    }
+
+    if (pickup.isEmpty || drop.isEmpty) return;
+
+    // Check coordinates if available
+    double? pLat, pLng, dLat, dLng;
+    final pLoc = travel['pickup_location'];
+    if (pLoc is Map) {
+      pLat = double.tryParse((pLoc['lat'] ?? pLoc['latitude'])?.toString() ?? '');
+      pLng = double.tryParse((pLoc['lng'] ?? pLoc['longitude'])?.toString() ?? '');
+      if (pLat == null && pLoc['coordinates'] is List && (pLoc['coordinates'] as List).length >= 2) {
+        pLng = double.tryParse(pLoc['coordinates'][0].toString());
+        pLat = double.tryParse(pLoc['coordinates'][1].toString());
+      }
+    }
+    final dLoc = travel['drop_location'];
+    if (dLoc is Map) {
+      dLat = double.tryParse((dLoc['lat'] ?? dLoc['latitude'])?.toString() ?? '');
+      dLng = double.tryParse((dLoc['lng'] ?? dLoc['longitude'])?.toString() ?? '');
+      if (dLat == null && dLoc['coordinates'] is List && (dLoc['coordinates'] as List).length >= 2) {
+        dLng = double.tryParse(dLoc['coordinates'][0].toString());
+        dLat = double.tryParse(dLoc['coordinates'][1].toString());
+      }
+    }
+
+    try {
+      isCalculatingDistance = true;
+      final dist = await GooglePlacesHelper.calculateDrivingDistance(
+        origin: pickup,
+        destination: drop,
+        originLat: (pLat != null && pLat != 0.0) ? pLat : null,
+        originLng: (pLng != null && pLng != 0.0) ? pLng : null,
+        destLat: (dLat != null && dLat != 0.0) ? dLat : null,
+        destLng: (dLng != null && dLng != 0.0) ? dLng : null,
+        apiKey: StringConstants.gpooglePlaceKey,
+      );
+      if (dist != null && dist > 0) {
+        calculatedDistanceKm = isRoundTrip ? (dist * 2) : dist;
+        update();
+      }
+    } catch (e) {
+      debugPrint("Error calculating booking route distance: $e");
+    } finally {
+      isCalculatingDistance = false;
+      update();
+    }
+  }
 
   // ---- Driver Waiting Time Timer ----
   Timer? _waitTimer;
@@ -418,7 +495,7 @@ void _groupBookings() {
         stopStatusPolling();
         return;
       }
-      fetchBookingDetails(bookingId);
+      fetchBookingDetails(bookingId, isPolling: true);
     });
   }
 
@@ -518,20 +595,28 @@ void _groupBookings() {
     }
   }
 
-  Future<void> fetchBookingDetails(String bookingId) async {
+  Future<void> fetchBookingDetails(String bookingId, {bool isPolling = false}) async {
     try {
-      bookingLoading = true;
-      bookingError = null;
-      update();
+      if (!isPolling && (bookingDetails == null || (bookingDetails?['_id'] != bookingId && bookingDetails?['id'] != bookingId))) {
+        bookingLoading = true;
+        bookingError = null;
+        calculatedDistanceKm = null;
+        update();
+      }
 
-      final response = await bookingHistoryPresenter.getBookingDetails(bookingId);
+      final response = await bookingHistoryPresenter.getBookingDetails(
+        bookingId,
+        showLoader: false,
+      );
 
       bookingLoading = false;
 
       if (response.hasError) {
-        final body = jsonDecode(response.data ?? '{}');
-        bookingError = body['Message'] ?? 'Failed to fetch booking details';
-        bookingDetails = null;
+        if (!isPolling) {
+          final body = jsonDecode(response.data ?? '{}');
+          bookingError = body['Message'] ?? 'Failed to fetch booking details';
+          bookingDetails = null;
+        }
         stopWaitingTimer();
         stopStatusPolling();
       } else {
@@ -539,6 +624,13 @@ void _groupBookings() {
         bookingDetails = body['Data'] ?? {};
 
         final status = (bookingDetails?['booking_status'] ?? '').toString().toLowerCase();
+
+        final fbMap = bookingDetails?['vendorRequestDetails']?['fare_breakdown'] ??
+            bookingDetails?['fare_breakdown'];
+        final bool hasFbData = status.contains('complete') && fbMap != null;
+        if (!hasFbData) {
+          _calculateRouteDistanceIfNeeded();
+        }
 
         if (status == 'driver arrived') {
           // Start waiting timer if not already running
@@ -564,7 +656,9 @@ void _groupBookings() {
       update();
     } catch (e) {
       bookingLoading = false;
-      bookingError = 'Error: $e';
+      if (!isPolling) {
+        bookingError = 'Error: $e';
+      }
       update();
     }
   }

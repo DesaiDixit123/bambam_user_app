@@ -6,16 +6,15 @@ import 'package:get/get.dart';
 class SelectVehicalScreen extends StatelessWidget {
   const SelectVehicalScreen({super.key});
 
-  Widget _smallIconTextNetwork(String imageUrl, String text) {
+  Widget _smallIconTextNetwork(dynamic logo, String text) {
     return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Image.network(
-          imageUrl,
-          height: Dimens.sixteen,
-          width: Dimens.sixteen,
-          fit: BoxFit.contain,
-          errorBuilder: (context, error, stackTrace) =>
-              Icon(Icons.image_not_supported, size: Dimens.sixteen),
+        FacilityIconWidget(
+          logo: logo,
+          text: text,
+          type: 'feature',
+          size: 16,
         ),
         Dimens.boxWidth6,
         Text(text, style: Styles.txtG5ColorsW40012),
@@ -28,7 +27,20 @@ class SelectVehicalScreen extends StatelessWidget {
     return GetBuilder<HomeController>(
       builder: (controller) {
         final trips = controller.exploreTrips ?? [];
-        final vehicles = controller.exploreVehicles ?? [];
+        final rawVehicles = controller.exploreVehicles ?? [];
+        final List<dynamic> vehicles = controller.tripMode == 2
+            ? rawVehicles.where((v) {
+                if (v is! Map) return false;
+                final vtId = (v['vehicle_type'] is Map)
+                    ? (v['vehicle_type']['_id']?.toString() ?? '')
+                    : (v['vehicle_type']?.toString() ?? '');
+                final vId = v['_id']?.toString() ?? '';
+                final price = controller.getLocalRentalPrice(
+                  vtId.isNotEmpty ? vtId : vId,
+                );
+                return price != null && price > 0;
+              }).toList()
+            : rawVehicles;
         final toList = controller.toControllers
             .map((c) => c.text.trim())
             .where((s) => s.isNotEmpty)
@@ -350,9 +362,7 @@ class SelectVehicalScreen extends StatelessWidget {
                                   padding: EdgeInsets.only(right: 12),
                                   child: GestureDetector(
                                     onTap: () {
-                                      controller.selectedRentalIndex = i;
-                                      controller.update();
-                                      controller.exploreCabs(); // refresh price
+                                      controller.selectRentalPackage(i);
                                     },
                                     child: Container(
                                       padding: EdgeInsets.symmetric(
@@ -476,25 +486,19 @@ class SelectVehicalScreen extends StatelessWidget {
 
                       // ---------------- LOCAL RENTAL (tripMode == 2) ----------------
                       if (controller.tripMode == 2) {
-                        final List localPrices =
-                            controller.datta?['final_price_local_trip']
-                                as List? ??
-                            [];
-
-                        final matched = localPrices.firstWhere(
-                          (e) =>
-                              e['vehicle_type_id']?.toString() == vehicleTypeId,
-                          orElse: () => null,
+                        final vId = vehicle['_id']?.toString() ?? '';
+                        final localPrice = controller.getLocalRentalPrice(
+                          vehicleTypeId.isNotEmpty ? vehicleTypeId : vId,
                         );
 
-                        if (matched != null &&
-                            matched['selected_price'] != null) {
-                          final double localPrice =
-                              (matched['selected_price'] as num).toDouble();
+                        if (localPrice != null && localPrice > 0) {
                           priceText = "₹ ${localPrice.round()}";
                           if (gstPercent > 0) {
                             gstAmount = (localPrice * gstPercent / 100).round();
                           }
+                        } else {
+                          priceText = "";
+                          gstAmount = 0;
                         }
 
                         // No upto km for local rental
@@ -1034,37 +1038,11 @@ class SelectVehicalScreen extends StatelessWidget {
                                                           ),
                                                       child: Row(
                                                         children: [
-                                                          Container(
-                                                            padding:
-                                                                const EdgeInsets.all(
-                                                                  4,
-                                                                ),
-                                                            decoration: BoxDecoration(
-                                                              shape: BoxShape
-                                                                  .circle,
-                                                              border: Border.all(
-                                                                color: ColorsValue
-                                                                    .appColor,
-                                                                width: 1,
-                                                              ),
-                                                            ),
-                                                            child: Image.network(
-                                                              f['logo'] ?? '',
-                                                              width: 16,
-                                                              height: 16,
-                                                              errorBuilder:
-                                                                  (
-                                                                    _,
-                                                                    __,
-                                                                    ___,
-                                                                  ) =>
-                                                                      const SizedBox(
-                                                                        width:
-                                                                            16,
-                                                                        height:
-                                                                            16,
-                                                                      ),
-                                                            ),
+                                                          FacilityIconWidget(
+                                                            logo: f['logo'],
+                                                            text: f['facility_description'] ?? "",
+                                                            type: 'inclusion',
+                                                            size: 20,
                                                           ),
                                                           Dimens.boxWidth12,
                                                           Expanded(
@@ -1116,37 +1094,11 @@ class SelectVehicalScreen extends StatelessWidget {
                                                           ),
                                                       child: Row(
                                                         children: [
-                                                          Container(
-                                                            padding:
-                                                                const EdgeInsets.all(
-                                                                  4,
-                                                                ),
-                                                            decoration: BoxDecoration(
-                                                              shape: BoxShape
-                                                                  .circle,
-                                                              border: Border.all(
-                                                                color: ColorsValue
-                                                                    .appColor,
-                                                                width: 1,
-                                                              ),
-                                                            ),
-                                                            child: Image.network(
-                                                              f['logo'] ?? '',
-                                                              width: 16,
-                                                              height: 16,
-                                                              errorBuilder:
-                                                                  (
-                                                                    _,
-                                                                    __,
-                                                                    ___,
-                                                                  ) =>
-                                                                      const SizedBox(
-                                                                        width:
-                                                                            16,
-                                                                        height:
-                                                                            16,
-                                                                      ),
-                                                            ),
+                                                          FacilityIconWidget(
+                                                            logo: f['logo'],
+                                                            text: f['facility_description'] ?? "",
+                                                            type: 'exclusion',
+                                                            size: 20,
                                                           ),
                                                           Dimens.boxWidth12,
                                                           Expanded(
@@ -1198,37 +1150,11 @@ class SelectVehicalScreen extends StatelessWidget {
                                                           ),
                                                       child: Row(
                                                         children: [
-                                                          Container(
-                                                            padding:
-                                                                const EdgeInsets.all(
-                                                                  4,
-                                                                ),
-                                                            decoration: BoxDecoration(
-                                                              shape: BoxShape
-                                                                  .circle,
-                                                              border: Border.all(
-                                                                color: ColorsValue
-                                                                    .appColor,
-                                                                width: 1,
-                                                              ),
-                                                            ),
-                                                            child: Image.network(
-                                                              f['logo'] ?? '',
-                                                              width: 16,
-                                                              height: 16,
-                                                              errorBuilder:
-                                                                  (
-                                                                    _,
-                                                                    __,
-                                                                    ___,
-                                                                  ) =>
-                                                                      const SizedBox(
-                                                                        width:
-                                                                            16,
-                                                                        height:
-                                                                            16,
-                                                                      ),
-                                                            ),
+                                                          FacilityIconWidget(
+                                                            logo: f['logo'],
+                                                            text: f['feature_description'] ?? "",
+                                                            type: 'feature',
+                                                            size: 20,
                                                           ),
                                                           Dimens.boxWidth12,
                                                           Expanded(

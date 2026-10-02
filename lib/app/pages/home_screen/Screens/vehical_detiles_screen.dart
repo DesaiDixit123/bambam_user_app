@@ -14,8 +14,298 @@ class VehicalDetilesScreen extends StatefulWidget {
 }
 
 class _VehicalDetilesScreenState extends State<VehicalDetilesScreen> {
-  bool _showFareBreakup = false;
+  bool _showFareBreakup = true;
   bool _showPaymentFareBreakup = true;
+  int _selectedFacilityTab = 0; // 0: Inclusion, 1: Exclusion, 2: Facility, 3: Terms & Condition
+
+  String _cleanCityName(String raw) {
+    if (raw.isEmpty) return '';
+    final parts = raw.split(',');
+    return parts.first.trim();
+  }
+
+  String _formatDisplayDate(String rawDate) {
+    if (rawDate.isEmpty) return '';
+    try {
+      String d = rawDate;
+      if (d.contains('T')) d = d.split('T').first;
+      if (RegExp(r'^\d{2}-\d{2}-\d{4}$').hasMatch(d)) return d;
+      final parsed = DateTime.parse(d);
+      return DateFormat('dd-MM-yyyy').format(parsed);
+    } catch (_) {
+      return rawDate;
+    }
+  }
+
+  String _cleanHtml(String htmlString) {
+    if (htmlString.isEmpty) return '';
+    return htmlString
+        .replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n')
+        .replaceAll(RegExp(r'</p>', caseSensitive: false), '\n\n')
+        .replaceAll(RegExp(r'<li>', caseSensitive: false), '• ')
+        .replaceAll(RegExp(r'</li>', caseSensitive: false), '\n')
+        .replaceAll(RegExp(r'<[^>]*>'), '')
+        .replaceAll('&nbsp;', ' ')
+        .replaceAll('&amp;', '&')
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .replaceAll('&quot;', '"')
+        .trim();
+  }
+
+  Widget _buildFacilitiesCard({
+    required List<dynamic> includeFacilities,
+    required List<dynamic> excludeFacilities,
+    required List<dynamic> vehicleFeatures,
+    required String termsConditions,
+  }) {
+    final tabTitles = [
+      "Inclusion",
+      "Exclusion",
+      "Facility",
+      "Terms & Condition"
+    ];
+
+    Widget buildTabButton(int index) {
+      final isSelected = _selectedFacilityTab == index;
+      return GestureDetector(
+        onTap: () {
+          setState(() {
+            _selectedFacilityTab = index;
+          });
+        },
+        child: Container(
+          height: 38,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: isSelected ? Colors.white : Colors.transparent,
+            borderRadius: BorderRadius.circular(6),
+            boxShadow: isSelected
+                ? [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.06),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    )
+                  ]
+                : null,
+          ),
+          child: Text(
+            tabTitles[index],
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+              color: isSelected
+                  ? ColorsValue.appColor
+                  : const Color(0xFF6B7280),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: ColorsValue.l4CB,
+        borderRadius: BorderRadius.circular(Dimens.twelve),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 2x2 Tab bar
+          Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: const Color(0xFFE5EDF4),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Expanded(child: buildTabButton(0)),
+                    const SizedBox(width: 6),
+                    Expanded(child: buildTabButton(1)),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Expanded(child: buildTabButton(2)),
+                    const SizedBox(width: 6),
+                    Expanded(child: buildTabButton(3)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Tab content
+          Builder(
+            builder: (_) {
+              if (_selectedFacilityTab == 0) {
+                // Inclusion
+                if (includeFacilities.isEmpty) {
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: Text(
+                      "No inclusions specified",
+                      style: TextStyle(fontSize: 13, color: Color(0xFF9CA3AF)),
+                    ),
+                  );
+                }
+                return Wrap(
+                  spacing: 16,
+                  runSpacing: 12,
+                  children: includeFacilities.map((item) {
+                    final text = item is Map
+                        ? (item['facility_description'] ?? '')
+                        : item.toString();
+                    final logo = item is Map ? item['logo'] : null;
+                    return Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        FacilityIconWidget(
+                          logo: logo,
+                          text: text,
+                          type: 'inclusion',
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          text,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w400,
+                            color: Color(0xFF1F2937),
+                          ),
+                        ),
+                      ],
+                    );
+                  }).toList(),
+                );
+              } else if (_selectedFacilityTab == 1) {
+                // Exclusion
+                if (excludeFacilities.isEmpty) {
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: Text(
+                      "No exclusions specified",
+                      style: TextStyle(fontSize: 13, color: Color(0xFF9CA3AF)),
+                    ),
+                  );
+                }
+                return Wrap(
+                  spacing: 16,
+                  runSpacing: 12,
+                  children: excludeFacilities.map((item) {
+                    final text = item is Map
+                        ? (item['facility_description'] ?? '')
+                        : item.toString();
+                    final logo = item is Map ? item['logo'] : null;
+                    return Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        FacilityIconWidget(
+                          logo: logo,
+                          text: text,
+                          type: 'exclusion',
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          text,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w400,
+                            color: Color(0xFF1F2937),
+                          ),
+                        ),
+                      ],
+                    );
+                  }).toList(),
+                );
+              } else if (_selectedFacilityTab == 2) {
+                // Facility
+                if (vehicleFeatures.isEmpty) {
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: Text(
+                      "No facilities specified",
+                      style: TextStyle(fontSize: 13, color: Color(0xFF9CA3AF)),
+                    ),
+                  );
+                }
+                return Wrap(
+                  spacing: 16,
+                  runSpacing: 12,
+                  children: vehicleFeatures.map((item) {
+                    final text = item is Map
+                        ? (item['feature_description'] ?? '')
+                        : item.toString();
+                    final logo = item is Map ? item['logo'] : null;
+                    return Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        FacilityIconWidget(
+                          logo: logo,
+                          text: text,
+                          type: 'feature',
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          text,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w400,
+                            color: Color(0xFF1F2937),
+                          ),
+                        ),
+                      ],
+                    );
+                  }).toList(),
+                );
+              } else {
+                // Terms & Condition
+                final cleanTerms = _cleanHtml(termsConditions);
+                if (cleanTerms.isEmpty) {
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: Text(
+                      "Standard terms and conditions apply.",
+                      style: TextStyle(fontSize: 13, color: Color(0xFF6B7280)),
+                    ),
+                  );
+                }
+                return Text(
+                  cleanTerms,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    height: 1.5,
+                    color: Color(0xFF374151),
+                  ),
+                );
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _iconText(String asset, String text) {
     return Row(
@@ -48,6 +338,15 @@ class _VehicalDetilesScreenState extends State<VehicalDetilesScreen> {
                     : (c.selectedExploreCab?['to'] ?? ''),
               ),
               if (c.tripMode == 3) c.calculateAirportSlabPrice(),
+              // Only auto-recalculate if user already has specific coordinates
+              // (i.e. user previously selected a specific address, not just city names)
+              if (c.tripMode != 3 &&
+                  ((c.modifiedPickupLat != null && c.modifiedDropLat != null) ||
+                   (c.pickupController.text.trim().isNotEmpty &&
+                    c.dropController.text.trim().isNotEmpty &&
+                    (c.pickupController.text.trim() != c.formController.text.trim() ||
+                     c.dropController.text.trim() != c.toController.text.trim()))))
+                c.recalculateRouteDistance(),
             ]);
             c.updateTotalFare(); // Recalculate if special services changed
             c.update();
@@ -114,25 +413,38 @@ class _VehicalDetilesScreenState extends State<VehicalDetilesScreen> {
           dateText = '$pd | $pickupTimeRaw';
         }
 
-        // Resolve vehicle_type Map safely
+        // Resolve vehicle_type Map safely across all trip modes
         Map<String, dynamic> vehicleTypeMap = {};
-        final rawVt = vehicle?['vehicle_type'];
+        final rawVt = vehicle?['vehicle_type'] ??
+            controller.selectedVehicle?['vehicle_type'];
         if (rawVt is Map) {
           vehicleTypeMap = Map<String, dynamic>.from(rawVt);
-        } else if (rawVt is String && rawVt.isNotEmpty) {
-          // Find matching vehicle from exploreVehicles to get populated vehicle_type Map
+        }
+
+        // If states list is empty or vehicleTypeMap is empty, search exploreVehicles
+        if ((vehicleTypeMap['states'] as List? ?? []).isEmpty) {
+          final targetId = vehicle?['_id']?.toString() ??
+              controller.selectedVehicle?['_id']?.toString() ??
+              '';
           final matchedVehicle = controller.exploreVehicles.firstWhere(
-            (v) => v is Map && v['_id']?.toString() == vehicle?['_id']?.toString(),
+            (v) =>
+                v is Map &&
+                (v['_id']?.toString() == targetId ||
+                    (v['vehicle_type'] is Map &&
+                        v['vehicle_type']['_id']?.toString() == targetId)),
             orElse: () => null,
           );
           if (matchedVehicle != null && matchedVehicle['vehicle_type'] is Map) {
-            vehicleTypeMap = Map<String, dynamic>.from(matchedVehicle['vehicle_type'] as Map);
+            vehicleTypeMap =
+                Map<String, dynamic>.from(matchedVehicle['vehicle_type'] as Map);
           }
         }
 
         // vehicle display fields
         String vehicleTypeName = vehicleTypeMap['name']?.toString() ?? '';
-        final brand = vehicle?['brand_name']?.toString() ?? '';
+        final brand = vehicle?['brand_name']?.toString() ??
+            controller.selectedVehicle?['brand_name']?.toString() ??
+            '';
         final displayName = brand.isNotEmpty
             ? brand
             : (vehicleTypeName.isNotEmpty ? vehicleTypeName : 'Vehicle');
@@ -142,8 +454,13 @@ class _VehicalDetilesScreenState extends State<VehicalDetilesScreen> {
 
         // Extract states list
         final statesList = vehicleTypeMap['states'] as List? ?? [];
-        final state = statesList.isNotEmpty ? statesList[0] : {};
+        final state = statesList.isNotEmpty && statesList[0] is Map
+            ? (statesList[0] as Map)
+            : {};
+        final includeFacilities = state['includeFacilities'] as List? ?? [];
+        final excludeFacilities = state['excludeFacilities'] as List? ?? [];
         final vehicleFeatures = state['vehicleFeatures'] as List? ?? [];
+        final termsConditions = state['terms_conditions']?.toString() ?? '';
 
         // price: try selectedExploreCab.final_price or explore.final_price
         String priceTxt = '₹0';
@@ -233,10 +550,10 @@ class _VehicalDetilesScreenState extends State<VehicalDetilesScreen> {
                                       ),
                                     ),
                                     Text(
-                                      displayFrom,
+                                      _cleanCityName(displayFrom),
                                       style: Styles.txtBlackColorW60016
                                           .copyWith(fontSize: 14),
-                                      maxLines: 2,
+                                      maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                     ),
                                   ],
@@ -254,10 +571,10 @@ class _VehicalDetilesScreenState extends State<VehicalDetilesScreen> {
                                       ),
                                     ),
                                     Text(
-                                      displayTo,
+                                      _cleanCityName(displayTo),
                                       style: Styles.txtBlackColorW60016
                                           .copyWith(fontSize: 14),
-                                      maxLines: 2,
+                                      maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                     ),
                                   ],
@@ -267,68 +584,57 @@ class _VehicalDetilesScreenState extends State<VehicalDetilesScreen> {
                           ),
                           Dimens.boxHeight12,
                           Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      "Pickup Date",
-                                      style: Styles.txtG5ColorsW40014.copyWith(
-                                        fontSize: 11,
-                                      ),
-                                    ),
-                                    Text(
-                                      pickupDateRaw.isNotEmpty
-                                          ? (pickupDateRaw.contains('T')
-                                                ? pickupDateRaw.split('T').first
-                                                : pickupDateRaw)
-                                          : '',
-                                      style: Styles.txtBlackColorW60016
-                                          .copyWith(fontSize: 13),
-                                    ),
-                                  ],
+                              Icon(
+                                Icons.calendar_month_outlined,
+                                color: ColorsValue.appColor,
+                                size: 16,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                "Pickup Date: ${_formatDisplayDate(pickupDateRaw)}",
+                                style: Styles.txtG5ColorsW40014.copyWith(
+                                  fontSize: 13,
+                                  color: const Color(0xFF6B7280),
+                                  fontWeight: FontWeight.w500,
                                 ),
                               ),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      "Return Date",
-                                      style: Styles.txtG5ColorsW40014.copyWith(
-                                        fontSize: 11,
-                                      ),
-                                    ),
-                                    Text(
-                                      returnDateRaw.isNotEmpty
-                                          ? (returnDateRaw.contains('T')
-                                                ? returnDateRaw.split('T').first
-                                                : returnDateRaw)
-                                          : '',
-                                      style: Styles.txtBlackColorW60016
-                                          .copyWith(fontSize: 13),
-                                    ),
-                                  ],
+                            ],
+                          ),
+                          Dimens.boxHeight8,
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.calendar_today_outlined,
+                                color: ColorsValue.appColor,
+                                size: 16,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                "Return Date: ${_formatDisplayDate(returnDateRaw)}",
+                                style: Styles.txtG5ColorsW40014.copyWith(
+                                  fontSize: 13,
+                                  color: const Color(0xFF6B7280),
+                                  fontWeight: FontWeight.w500,
                                 ),
                               ),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      "Pickup Time",
-                                      style: Styles.txtG5ColorsW40014.copyWith(
-                                        fontSize: 11,
-                                      ),
-                                    ),
-                                    Text(
-                                      pickupTimeRaw,
-                                      style: Styles.txtBlackColorW60016
-                                          .copyWith(fontSize: 13),
-                                    ),
-                                  ],
+                            ],
+                          ),
+                          Dimens.boxHeight8,
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.access_time_outlined,
+                                color: ColorsValue.appColor,
+                                size: 16,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                "Pickup Time: $pickupTimeRaw",
+                                style: Styles.txtG5ColorsW40014.copyWith(
+                                  fontSize: 13,
+                                  color: const Color(0xFF6B7280),
+                                  fontWeight: FontWeight.w500,
                                 ),
                               ),
                             ],
@@ -338,7 +644,7 @@ class _VehicalDetilesScreenState extends State<VehicalDetilesScreen> {
                           Dimens.boxHeight3,
                           if (controller.tripMode != 2) ...[
                             Text(
-                              '$displayFrom → $displayTo',
+                              '${_cleanCityName(displayFrom)}  →  ${_cleanCityName(displayTo)}',
                               style: Styles.txtBlackColorW60016.copyWith(
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
@@ -346,7 +652,7 @@ class _VehicalDetilesScreenState extends State<VehicalDetilesScreen> {
                             ),
                           ] else ...[
                             Text(
-                              controller.localCityController.text,
+                              _cleanCityName(controller.localCityController.text),
                               style: Styles.txtBlackColorW60016.copyWith(
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
@@ -354,19 +660,40 @@ class _VehicalDetilesScreenState extends State<VehicalDetilesScreen> {
                             ),
                           ],
 
-                          Dimens.boxHeight8,
+                          Dimens.boxHeight10,
                           Row(
                             children: [
                               Icon(
                                 Icons.calendar_month_outlined,
                                 color: ColorsValue.appColor,
-                                size: 20,
+                                size: 18,
                               ),
-                              Dimens.boxWidth8,
+                              const SizedBox(width: 6),
                               Text(
-                                dateText.isNotEmpty ? dateText : 'Select Date',
+                                "Pickup: ${_formatDisplayDate(pickupDateRaw)}",
                                 style: Styles.txtG5ColorsW40014.copyWith(
+                                  fontSize: 13,
                                   color: const Color(0xFF6B7280),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                          Dimens.boxHeight8,
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.access_time_outlined,
+                                color: ColorsValue.appColor,
+                                size: 18,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                "Pickup Time: $pickupTimeRaw",
+                                style: Styles.txtG5ColorsW40014.copyWith(
+                                  fontSize: 13,
+                                  color: const Color(0xFF6B7280),
+                                  fontWeight: FontWeight.w500,
                                 ),
                               ),
                             ],
@@ -397,94 +724,124 @@ class _VehicalDetilesScreenState extends State<VehicalDetilesScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  vehicleTypeName.isNotEmpty
-                                      ? vehicleTypeName
-                                      : "SUV",
-                                  style: Styles.txtG7Colors40014,
-                                ),
-                                Dimens.boxHeight3,
-                                Text(
-                                  displayName,
-                                  style: Styles.txtBlackColorW60016.copyWith(
-                                    fontSize: 18,
-                                    color: ColorsValue.appColor,
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    () {
+                                      final isOneway = controller.tripMode == 0;
+                                      final isAirport = controller.tripMode == 3;
+                                      String uptoKmText = '';
+                                      if (isOneway || isAirport) {
+                                        final actualKm = (controller.selectedExploreCab?['totalKm'] is num)
+                                            ? (controller.selectedExploreCab!['totalKm'] as num).toDouble()
+                                            : controller.totalKm;
+                                        if (actualKm > 0) uptoKmText = "Up to ${actualKm.toStringAsFixed(0)} KM";
+                                      }
+                                      if (uptoKmText.isEmpty) {
+                                        final uptoKm = controller.rawUptoKmComputed > 0
+                                            ? controller.rawUptoKmComputed
+                                            : (controller.selectedExploreCab?['upto_km'] is num
+                                                ? (controller.selectedExploreCab!['upto_km'] as num).toDouble()
+                                                : controller.totalKm);
+                                        uptoKmText = "Up to ${uptoKm.toStringAsFixed(0)} KM";
+                                      }
+                                      final catName = vehicleTypeName.isNotEmpty
+                                          ? vehicleTypeName
+                                          : (displayName.contains(' - ')
+                                              ? displayName.split(' - ').first.trim()
+                                              : (displayName.contains('-')
+                                                  ? displayName.split('-').first.trim()
+                                                  : displayName));
+                                      final titleName = catName.isNotEmpty ? catName : 'Sedan';
+                                      return "$titleName ($uptoKmText)";
+                                    }(),
+                                    style: Styles.txtBlackColorW60016.copyWith(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      color: ColorsValue.appColor,
+                                    ),
                                   ),
-                                ),
-                                Text(
                                   () {
-                                    // For Oneway: show actual route distance (totalKm) as the "Up to X km"
-                                    // This matches the Fare Summary logic where Total KMs = actual route km
-                                    final isOneway = controller.tripMode == 0;
-                                    final isAirport = controller.tripMode == 3;
-                                    if (isOneway || isAirport) {
-                                      // actualKm from explore response (e.g. 287 km for Surat→Mumbai)
-                                      final actualKm =
-                                          (controller
-                                                  .selectedExploreCab?['totalKm']
-                                              is num)
-                                          ? (controller.selectedExploreCab!['totalKm']
-                                                    as num)
-                                                .toDouble()
-                                          : controller.totalKm;
-                                      if (actualKm > 0)
-                                        return "Up to ${actualKm.toStringAsFixed(0)} km";
+                                    final catName = vehicleTypeName.isNotEmpty
+                                        ? vehicleTypeName
+                                        : (displayName.contains(' - ')
+                                            ? displayName.split(' - ').first.trim()
+                                            : (displayName.contains('-')
+                                                ? displayName.split('-').first.trim()
+                                                : displayName));
+                                    final subTitle = (displayName.isNotEmpty && displayName != catName)
+                                        ? displayName
+                                        : '';
+                                    if (subTitle.isNotEmpty) {
+                                      return Padding(
+                                        padding: const EdgeInsets.only(top: 4),
+                                        child: Text(
+                                          subTitle,
+                                          style: Styles.txtG7Colors40014.copyWith(
+                                            fontSize: 13,
+                                            color: const Color(0xFF6B7280),
+                                          ),
+                                        ),
+                                      );
                                     }
-                                    // Round trip / Local: use upto_km from package
-                                    final uptoKm =
-                                        controller.rawUptoKmComputed > 0
-                                        ? controller.rawUptoKmComputed
-                                        : (controller.selectedExploreCab?['upto_km']
-                                                  is num
-                                              ? (controller.selectedExploreCab!['upto_km']
-                                                        as num)
-                                                    .toDouble()
-                                              : controller.totalKm);
-                                    return "Up to ${uptoKm.toStringAsFixed(0)} km";
+                                    return const SizedBox.shrink();
                                   }(),
-                                  style: Styles.txtBlackColorW60016.copyWith(
-                                    fontWeight: FontWeight.normal,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
+                            Dimens.boxWidth12,
                             carPhotoUrl.isNotEmpty
                                 ? Image.network(
                                     carPhotoUrl,
                                     height: Dimens.fourtyEight,
+                                    width: 70,
+                                    fit: BoxFit.contain,
                                     errorBuilder: (_, __, ___) => Image.asset(
                                       AssetConstants.CarImge,
                                       height: Dimens.fourtyEight,
+                                      width: 70,
+                                      fit: BoxFit.contain,
                                     ),
                                   )
                                 : Image.asset(
                                     AssetConstants.CarImge,
                                     height: Dimens.fourtyEight,
+                                    width: 70,
+                                    fit: BoxFit.contain,
                                   ),
                           ],
                         ),
-                        Dimens.boxHeight10,
-                        Wrap(
-                          alignment: WrapAlignment.start,
-                          spacing: 12,
-                          runSpacing: 8,
-                          children: vehicleFeatures.map((feature) {
-                            return _smallIconTextNetwork(
-                              feature['logo'] ?? "",
-                              feature['feature_description'] ?? "",
-                            );
-                          }).toList(),
-                        ),
-                        Dimens.boxHeight10,
+                        if (vehicleFeatures.isNotEmpty) ...[
+                          Dimens.boxHeight10,
+                          Wrap(
+                            alignment: WrapAlignment.start,
+                            spacing: 12,
+                            runSpacing: 8,
+                            children: vehicleFeatures.map((feature) {
+                              return _smallIconTextNetwork(
+                                feature['logo'] ?? "",
+                                feature['feature_description'] ?? "",
+                              );
+                            }).toList(),
+                          ),
+                        ],
                       ],
                     ),
                   ),
+                ),
+
+                Dimens.boxHeight16,
+
+                // Facilities Tab Card (Inclusion | Exclusion | Facility | Terms & Condition)
+                _buildFacilitiesCard(
+                  includeFacilities: includeFacilities,
+                  excludeFacilities: excludeFacilities,
+                  vehicleFeatures: vehicleFeatures,
+                  termsConditions: termsConditions,
                 ),
 
                 Dimens.boxHeight16,
@@ -600,16 +957,17 @@ class _VehicalDetilesScreenState extends State<VehicalDetilesScreen> {
                           city: controller.formController.text, // PICKUP
                           onSelected: (place) {
                             controller.pickupController.text =
-                                place["display_name"];
-                            controller.modifiedPickupLat = double.tryParse(
-                              place["lat"].toString(),
-                            );
-                            controller.modifiedPickupLng = double.tryParse(
-                              place["lon"].toString(),
-                            );
+                                place["display_name"] ?? '';
+                            // Only store coords if valid (non-null, non-zero)
+                            final lat = double.tryParse(place["lat"]?.toString() ?? '');
+                            final lon = double.tryParse(place["lon"]?.toString() ?? '');
+                            controller.modifiedPickupLat = (lat != null && lat != 0.0) ? lat : null;
+                            controller.modifiedPickupLng = (lon != null && lon != 0.0) ? lon : null;
                             controller.markUnprocessed();
                             if (controller.tripMode == 3) {
                               controller.calculateAirportSlabPrice();
+                            } else {
+                              controller.recalculateRouteDistance();
                             }
                             controller.update();
                           },
@@ -623,16 +981,17 @@ class _VehicalDetilesScreenState extends State<VehicalDetilesScreen> {
                             city: controller.toController.text,
                             onSelected: (place) {
                               controller.dropController.text =
-                                  place["display_name"];
-                              controller.modifiedDropLat = double.tryParse(
-                                place["lat"].toString(),
-                              );
-                              controller.modifiedDropLng = double.tryParse(
-                                place["lon"].toString(),
-                              );
+                                  place["display_name"] ?? '';
+                              // Only store coords if valid (non-null, non-zero)
+                              final lat = double.tryParse(place["lat"]?.toString() ?? '');
+                              final lon = double.tryParse(place["lon"]?.toString() ?? '');
+                              controller.modifiedDropLat = (lat != null && lat != 0.0) ? lat : null;
+                              controller.modifiedDropLng = (lon != null && lon != 0.0) ? lon : null;
                               controller.markUnprocessed();
                               if (controller.tripMode == 3) {
                                 controller.calculateAirportSlabPrice();
+                              } else {
+                                controller.recalculateRouteDistance();
                               }
                               controller.update();
                             },
@@ -726,22 +1085,61 @@ class _VehicalDetilesScreenState extends State<VehicalDetilesScreen> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          Text(
-                            controller.selectedOffer == null
-                                ? "Apply Coupon & Offers"
-                                : "Change Coupon & Offers",
-                            style: Styles.txtBlackColorW40014,
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  controller.selectedOffer == null
+                                      ? "Apply Coupon & Offers"
+                                      : "Coupon Applied: ${controller.selectedOffer?['offer_code'] ?? controller.selectedOffer?['offer_name'] ?? ''}",
+                                  style: controller.selectedOffer == null
+                                      ? Styles.txtBlackColorW40014
+                                      : Styles.txtBlackColorW60016.copyWith(
+                                          color: Colors.green.shade700,
+                                        ),
+                                ),
+                                if (controller.selectedOffer != null)
+                                  Text(
+                                    "Saved ₹${controller.discountAmountComputed.toStringAsFixed(0)} on this ride",
+                                    style: Styles.txtG7Colors40014.copyWith(
+                                      fontSize: 12,
+                                      color: Colors.green,
+                                    ),
+                                  ),
+                              ],
+                            ),
                           ),
-                          controller.selectedOffer == null
-                              ? Icon(Icons.arrow_forward_ios_outlined)
-                              : Container(
+                          if (controller.selectedOffer == null)
+                            const Icon(Icons.arrow_forward_ios_outlined, size: 16)
+                          else
+                            Row(
+                              children: [
+                                InkWell(
+                                  onTap: () {
+                                    controller.selectedOffer = null;
+                                    controller.discountValue = 0;
+                                    controller.updateTotalFare();
+                                    controller.update();
+                                  },
                                   child: Text(
-                                    "Change",
+                                    "Remove",
                                     style: Styles.txtBlackColorW60016.copyWith(
-                                      color: ColorsValue.appColor,
+                                      color: Colors.red,
+                                      fontSize: 13,
                                     ),
                                   ),
                                 ),
+                                Dimens.boxWidth12,
+                                Text(
+                                  "Change",
+                                  style: Styles.txtBlackColorW60016.copyWith(
+                                    color: ColorsValue.appColor,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
+                            ),
                         ],
                       ),
                     ),
@@ -783,72 +1181,88 @@ class _VehicalDetilesScreenState extends State<VehicalDetilesScreen> {
                               Dimens.boxHeight12,
 
                               // 🔸 List of selectable services
-                              ...List.generate(
-                                controller.specialServices.length,
-                                (index) {
-                                  final s = controller.specialServices[index];
-                                  final id = s['_id'];
-                                  final description =
-                                      s['description']?.toString() ?? '';
-                                  final amountNum = s['amount'] is num
-                                      ? (s['amount'] as num)
-                                      : 0;
-                                  final amountText = '₹${amountNum.toString()}';
-                                  final isSelected = controller
-                                      .selectedServiceIds
-                                      .contains(id);
+                              if (controller.specialServices.isEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 4),
+                                  child: Text(
+                                    "No special services available",
+                                    style: Styles.txtG7Colors40014.copyWith(
+                                      fontSize: 13,
+                                      color: const Color(0xFF9CA3AF),
+                                    ),
+                                  ),
+                                )
+                              else
+                                ...List.generate(
+                                  controller.specialServices.length,
+                                  (index) {
+                                    final s = controller.specialServices[index];
+                                    final id = s['_id'];
+                                    final description =
+                                        s['description']?.toString() ??
+                                        s['service_name']?.toString() ??
+                                        s['name']?.toString() ??
+                                        '';
+                                    final amountNum = (s['amount'] is num
+                                        ? (s['amount'] as num).toDouble()
+                                        : (s['price'] is num
+                                            ? (s['price'] as num).toDouble()
+                                            : double.tryParse(s['amount']?.toString() ?? s['price']?.toString() ?? '0') ?? 0.0));
+                                    final amountText = '₹${amountNum.toStringAsFixed(0)}';
+                                    final isSelected = controller
+                                        .selectedServiceIds
+                                        .contains(id);
 
-                                  return Column(
-                                    children: [
-                                      InkWell(
-                                        onTap: () {
-                                          controller.markUnprocessed();
+                                    return Column(
+                                      children: [
+                                        InkWell(
+                                          onTap: () {
+                                            controller.markUnprocessed();
 
-                                          if (isSelected) {
-                                            controller.selectedServiceIds
-                                                .remove(id);
-                                          } else {
-                                            controller.selectedServiceIds.add(
-                                              id,
-                                            );
-                                          }
-                                          controller.updateTotalFare();
-                                        },
+                                            if (isSelected) {
+                                              controller.selectedServiceIds
+                                                  .remove(id);
+                                            } else {
+                                              controller.selectedServiceIds.add(
+                                                id,
+                                              );
+                                            }
+                                            controller.updateTotalFare();
+                                          },
 
-                                        child: Padding(
-                                          padding: EdgeInsets.symmetric(
-                                            vertical: Dimens.twelve,
-                                          ),
-                                          child: Row(
-                                            children: [
-                                              // ✅ Custom square checkbox
-                                              Container(
-                                                height: Dimens.twentyFive,
-                                                width: Dimens.twentyFive,
-                                                decoration: BoxDecoration(
-                                                  borderRadius:
-                                                      BorderRadius.circular(6),
-                                                  border: Border.all(
+                                          child: Padding(
+                                            padding: EdgeInsets.symmetric(
+                                              vertical: Dimens.twelve,
+                                            ),
+                                            child: Row(
+                                              children: [
+                                                // ✅ Custom square checkbox
+                                                Container(
+                                                  height: Dimens.twentyFive,
+                                                  width: Dimens.twentyFive,
+                                                  decoration: BoxDecoration(
+                                                    borderRadius:
+                                                        BorderRadius.circular(6),
+                                                    border: Border.all(
+                                                      color: isSelected
+                                                          ? ColorsValue.appColor
+                                                          : ColorsValue
+                                                                .borderColors,
+                                                      width: 2,
+                                                    ),
                                                     color: isSelected
                                                         ? ColorsValue.appColor
-                                                        : ColorsValue
-                                                              .borderColors,
-                                                    width: 2,
+                                                        : Colors.transparent,
                                                   ),
-                                                  color: isSelected
-                                                      ? ColorsValue.appColor
-                                                            .withOpacity(0.15)
-                                                      : Colors.transparent,
+                                                  child: isSelected
+                                                      ? const Icon(
+                                                          Icons.check,
+                                                          size: 14,
+                                                          color: Colors.white,
+                                                        )
+                                                      : null,
                                                 ),
-                                                child: isSelected
-                                                    ? const Icon(
-                                                        Icons.check,
-                                                        size: 14,
-                                                        color: Colors.blue,
-                                                      )
-                                                    : null,
-                                              ),
-                                              Dimens.boxWidth10,
+                                                Dimens.boxWidth10,
 
                                               // 📝 Description
                                               Expanded(
@@ -1248,16 +1662,10 @@ class _VehicalDetilesScreenState extends State<VehicalDetilesScreen> {
                     Dimens.boxHeight10,
                   ],
 
-                  // Total KMs
+                  // Total KMs (dynamic - recalculates when user picks specific pickup/drop)
                   Builder(
                     builder: (context) {
-                      final tkm =
-                          num.tryParse(
-                            controller.selectedExploreCab?['totalKm']
-                                    ?.toString() ??
-                                controller.totalKm.toString(),
-                          ) ??
-                          0;
+                      final tkm = controller.currentTotalKm;
                       if (tkm > 0) {
                         return Column(
                           children: [
@@ -1268,10 +1676,18 @@ class _VehicalDetilesScreenState extends State<VehicalDetilesScreen> {
                                   "Total KMs",
                                   style: Styles.txtG7Colors40014,
                                 ),
-                                Text(
-                                  "${tkm.toStringAsFixed(0)} KM",
-                                  style: Styles.txtBlackColorW40014,
-                                ),
+                                controller.isCalculatingDistance
+                                    ? const SizedBox(
+                                        width: 14,
+                                        height: 14,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : Text(
+                                        "${tkm.toStringAsFixed(0)} KM",
+                                        style: Styles.txtBlackColorW40014,
+                                      ),
                               ],
                             ),
                             Dimens.boxHeight10,
@@ -1285,7 +1701,7 @@ class _VehicalDetilesScreenState extends State<VehicalDetilesScreen> {
                   // Included KMs
                   Builder(
                     builder: (context) {
-                      final ikm = controller.rawUptoKmComputed;
+                      final ikm = controller.currentIncludedKm;
                       if (ikm > 0) {
                         return Column(
                           children: [
@@ -1325,14 +1741,25 @@ class _VehicalDetilesScreenState extends State<VehicalDetilesScreen> {
                     Dimens.boxHeight10,
                   ],
 
-                  // Extra KMs Charge
+                  // Extra KMs & Extra KMs Charge (exact match with website ReviewBooking.jsx)
                   if ((controller.tripMode == 0 || controller.tripMode == 1) &&
-                      controller.extraKMsCharge > 0) ...[
+                      controller.currentExtraKm > 0) ...[
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text("Extra KMs", style: Styles.txtG7Colors40014),
+                        Text(
+                          "${controller.currentExtraKm.toStringAsFixed(0)} KM",
+                          style: Styles.txtBlackColorW40014,
+                        ),
+                      ],
+                    ),
+                    Dimens.boxHeight10,
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          "Extra KMs charge",
+                          "Extra KMs Charge${controller.perKmRate > 0 ? ' (₹${controller.perKmRate.toStringAsFixed(0)}/KM)' : ''}",
                           style: Styles.txtG7Colors40014,
                         ),
                         Text(
@@ -1344,69 +1771,57 @@ class _VehicalDetilesScreenState extends State<VehicalDetilesScreen> {
                     Dimens.boxHeight10,
                   ],
 
-                  // Dashed Divider
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      final boxWidth = constraints.constrainWidth();
-                      const dashWidth = 4.0;
-                      const dashHeight = 1.0;
-                      final dashCount = (boxWidth / (2 * dashWidth)).floor();
-                      return Flex(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        direction: Axis.horizontal,
-                        children: List.generate(dashCount, (_) {
-                          return SizedBox(
-                            width: dashWidth,
-                            height: dashHeight,
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                color: ColorsValue.borderColors,
+                  // Special Services with itemized breakdown
+                  if (controller.selectedServiceIds.isNotEmpty && controller.specialServicesTotal > 0) ...[
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          "Special Services",
+                          style: Styles.txtG7Colors40014.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: Colors.black87,
+                          ),
+                        ),
+                        Text(
+                          "₹${controller.specialServicesTotal.toStringAsFixed(0)}",
+                          style: Styles.txtBlackColorW60016,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    ...controller.selectedServiceIds.map((id) {
+                      final svc = controller.specialServices.firstWhereOrNull((s) => s['_id'] == id);
+                      if (svc == null) return const SizedBox.shrink();
+                      final desc = (svc['description'] ?? svc['name'] ?? svc['service_name'] ?? 'Service').toString();
+                      final amt = (svc['amount'] is num)
+                          ? (svc['amount'] as num).toDouble()
+                          : (num.tryParse(svc['amount']?.toString() ?? '0') ?? 0.0);
+                      return Padding(
+                        padding: const EdgeInsets.only(left: 14.0, bottom: 4.0),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              "➔ $desc",
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: Color(0xFF6B7280),
                               ),
                             ),
-                          );
-                        }),
-                      );
-                    },
-                  ),
-                  Dimens.boxHeight10,
-
-                  // Combined Special Services
-                  if (controller.selectedServiceIds.isNotEmpty) ...[
-                    Builder(
-                      builder: (context) {
-                        double servicesTotal = controller.selectedServiceIds
-                            .fold(0.0, (sum, id) {
-                              final svc = controller.specialServices
-                                  .firstWhereOrNull((s) => s['_id'] == id);
-                              final amt = (svc?['amount'] is num)
-                                  ? (svc!['amount'] as num)
-                                  : 0;
-                              return sum + amt.toDouble();
-                            });
-                        if (servicesTotal > 0) {
-                          return Column(
-                            children: [
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(
-                                    "Special Services",
-                                    style: Styles.txtG7Colors40014,
-                                  ),
-                                  Text(
-                                    "₹${servicesTotal.toStringAsFixed(0)}",
-                                    style: Styles.txtBlackColorW60016,
-                                  ),
-                                ],
+                            Text(
+                              "₹${amt.toStringAsFixed(0)}",
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: Color(0xFF6B7280),
+                                fontWeight: FontWeight.w500,
                               ),
-                              Dimens.boxHeight10,
-                            ],
-                          );
-                        }
-                        return const SizedBox.shrink();
-                      },
-                    ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                    Dimens.boxHeight10,
                   ],
 
                   // Coupon Discount
@@ -1431,6 +1846,53 @@ class _VehicalDetilesScreenState extends State<VehicalDetilesScreen> {
                     Dimens.boxHeight10,
                   ],
 
+                  // Dashed Divider before Total Fare
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final boxWidth = constraints.constrainWidth();
+                      const dashWidth = 4.0;
+                      const dashHeight = 1.0;
+                      final dashCount = (boxWidth / (2 * dashWidth)).floor();
+                      return Flex(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        direction: Axis.horizontal,
+                        children: List.generate(dashCount, (_) {
+                          return SizedBox(
+                            width: dashWidth,
+                            height: dashHeight,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: ColorsValue.borderColors,
+                              ),
+                            ),
+                          );
+                        }),
+                      );
+                    },
+                  ),
+                  Dimens.boxHeight12,
+
+                  // Total Fare (Pre-Tax Total - Highlighted in Orange)
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        "Total Fare",
+                        style: Styles.txtBlackColorW60016.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Text(
+                        "₹${controller.preTaxFare.toStringAsFixed(0)}",
+                        style: Styles.txtBlackColorW60016.copyWith(
+                          color: ColorsValue.appColor,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Dimens.boxHeight10,
+
                   // GST
                   if (controller.gstAmount > 0) ...[
                     Row(
@@ -1449,78 +1911,97 @@ class _VehicalDetilesScreenState extends State<VehicalDetilesScreen> {
                     Dimens.boxHeight10,
                   ],
 
+                  // Pending Payment
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        "Pending Payment",
+                        style: Styles.txtG7Colors40014,
+                      ),
+                      Text(
+                        "${100 - controller.selectedAdvancePercent}%",
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.red.shade600,
+                        ),
+                      ),
+                      Text(
+                        "₹${(controller.selectedAdvancePercent > 0 ? controller.laterAmount : controller.totalFare).toStringAsFixed(0)}",
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.red.shade600,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Dimens.boxHeight10,
+
                   // Advance Payment
                   if (controller.selectedAdvancePercent > 0) ...[
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text("Advance Payment", style: Styles.txtG7Colors40014),
-                        Row(
-                          children: [
-                            Text(
-                              "${controller.selectedAdvancePercent}%",
-                              style: Styles.txtBlackColorW60016.copyWith(
-                                color: Colors.green,
-                              ),
-                            ),
-                            Dimens.boxWidth8,
-                            Text(
-                              "₹${controller.advanceAmount.toStringAsFixed(0)}",
-                              style: Styles.txtBlackColorW60016.copyWith(
-                                color: Colors.green,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                    Dimens.boxHeight10,
-                  ],
-
-                  // Pending Payment
-                  if (controller.selectedAdvancePercent < 100) ...[
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text("Pending Payment", style: Styles.txtG7Colors40014),
-                        Row(
-                          children: [
-                            Text(
-                              "${100 - controller.selectedAdvancePercent}%",
-                              style: Styles.txtBlackColorW60016.copyWith(
-                                color: ColorsValue.appColor,
-                              ),
-                            ),
-                            Dimens.boxWidth8,
-                            Text(
-                              "₹${controller.laterAmount.toStringAsFixed(0)}",
-                              style: Styles.txtBlackColorW60016.copyWith(
-                                color: ColorsValue.appColor,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                    Dimens.boxHeight10,
-                  ],
-
-                  if (controller.totalFare > 0) ...[
-                    Container(height: 1, color: ColorsValue.borderColors),
-                    Dimens.boxHeight10,
-
-                    // Final Total
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text("Total Fare", style: Styles.txtBlackColorW60016),
                         Text(
-                          "₹${controller.totalFare.toStringAsFixed(0)}",
-                          style: Styles.txtBlackColorW60016,
+                          "Advance Payment (${controller.selectedAdvancePercent}%)",
+                          style: Styles.txtG7Colors40014.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: Colors.green.shade700,
+                          ),
+                        ),
+                        Text(
+                          "₹${controller.advanceAmount.toStringAsFixed(0)}",
+                          style: Styles.txtBlackColorW60016.copyWith(
+                            color: Colors.green.shade700,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ],
                     ),
+                    Dimens.boxHeight10,
                   ],
+
+                  // To Pay Driver
+                  if (controller.selectedAdvancePercent > 0 && controller.selectedAdvancePercent < 100) ...[
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          "To Pay Driver (${100 - controller.selectedAdvancePercent}%)",
+                          style: Styles.txtG7Colors40014.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        Text(
+                          "₹${controller.laterAmount.toStringAsFixed(0)}",
+                          style: Styles.txtBlackColorW60016.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                    Dimens.boxHeight10,
+                  ],
+
+                  // Final Total Fare (Post-Tax Total matching website)
+                  Container(height: 1, color: ColorsValue.borderColors),
+                  Dimens.boxHeight10,
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        "Total Fare",
+                        style: Styles.txtG7Colors40014,
+                      ),
+                      Text(
+                        "₹${controller.totalFare.toStringAsFixed(0)}",
+                        style: Styles.txtBlackColorW60016,
+                      ),
+                    ],
+                  ),
+                  Dimens.boxHeight10,
 
                   if (controller.tripMode == 1) ...[
                     Dimens.boxHeight10,
@@ -1662,16 +2143,15 @@ Widget _paymentOptionCard({
   );
 }
 
-Widget _smallIconTextNetwork(String imageUrl, String text) {
+Widget _smallIconTextNetwork(dynamic logo, String text) {
   return Row(
+    mainAxisSize: MainAxisSize.min,
     children: [
-      Image.network(
-        imageUrl,
-        height: Dimens.sixteen,
-        width: Dimens.sixteen,
-        fit: BoxFit.contain,
-        errorBuilder: (context, error, stackTrace) =>
-            Icon(Icons.image_not_supported, size: Dimens.sixteen),
+      FacilityIconWidget(
+        logo: logo,
+        text: text,
+        type: 'feature',
+        size: 16,
       ),
       Dimens.boxWidth6,
       Text(text, style: Styles.txtG5ColorsW40012),

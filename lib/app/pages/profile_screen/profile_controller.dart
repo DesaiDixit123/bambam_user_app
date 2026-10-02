@@ -1,12 +1,17 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'package:http/http.dart' as http;
 
+
+import 'dart:developer';
 import 'package:bam_bam_user/app/app.dart';
+import 'package:bam_bam_user/data/helpers/api_wrapper.dart';
 import 'package:bam_bam_user/domain/entities/enums.dart';
 import 'package:bam_bam_user/domain/repositories/local_storage_keys.dart';
 import 'package:bam_bam_user/domain/repositories/repository.dart';
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
 
 import 'package:flutter_svg/svg.dart';
 import 'package:get/get.dart';
@@ -24,19 +29,80 @@ class ProfileController extends GetxController {
   TextEditingController phoneNumberController = TextEditingController();
   TextEditingController pinCodeController = TextEditingController();
 
-  List<String> cityList = [];
-  String? selectedCity;
+  String initialPhoneNo = "";
+  bool isPhoneAlreadyRegistered = false;
+  bool isCheckingPhone = false;
+  Timer? _phoneCheckDebounce;
+
+  List<Map<String, dynamic>> stateListMap = [];
   List<String> stateList = [];
   String? selectedState;
+  List<String> cityList = [];
+  String? selectedCity;
+  bool isFetchingStates = false;
+  bool isFetchingCities = false;
+  bool isDetectingLocation = false;
 
   // Profile state
   String profileImageUrl = "";
   File? profileImageFile; // local picked image for upload
 
+  String get userName {
+    if (fullNameController.text.trim().isNotEmpty) {
+      return fullNameController.text.trim();
+    }
+    try {
+      final userJson = Get.find<Repository>().getStringValue(LocalKeys.userDetails);
+      if (userJson.isNotEmpty) {
+        final decoded = jsonDecode(userJson);
+        if (decoded is Map) {
+          final name = (decoded['full_name'] ?? decoded['traveler_name'] ?? decoded['name'])?.toString();
+          if (name != null && name.trim().isNotEmpty) {
+            return name.trim();
+          }
+        }
+      }
+    } catch (_) {}
+    return '';
+  }
+
+  String get userPhone => phoneNumberController.text.trim();
+
   @override
   void onInit() {
     super.onInit();
+    _loadLocalProfile();
     initData();
+  }
+
+  void _loadLocalProfile() {
+    try {
+      final userJson = Get.find<Repository>().getStringValue(LocalKeys.userDetails);
+      if (userJson.isNotEmpty) {
+        final data = jsonDecode(userJson);
+        if (data is Map) {
+          final name = (data['full_name'] ?? data['traveler_name'] ?? data['name'])?.toString();
+          if (name != null && name.isNotEmpty && fullNameController.text.isEmpty) {
+            fullNameController.text = name;
+          }
+          final img = data['profile_image']?.toString();
+          if (img != null && img.isNotEmpty && profileImageUrl.isEmpty) {
+            profileImageUrl = img;
+          }
+          final phone = data['phone_no']?.toString();
+          if (phone != null && phone.isNotEmpty) {
+            if (phoneNumberController.text.isEmpty) {
+              phoneNumberController.text = phone;
+            }
+            if (initialPhoneNo.isEmpty) {
+              initialPhoneNo = phone.trim();
+            }
+          }
+        }
+      }
+    } catch (_) {}
+    update();
+
   }
 
   Future<void> initData() async {
@@ -45,35 +111,275 @@ class ProfileController extends GetxController {
   }
 
   Future<void> fetchStates() async {
+    isFetchingStates = true;
+    update();
     try {
-      final res = await http.get(
-        Uri.parse('https://countriesnow.space/api/v0.1/countries/states/q?country=India'),
-      );
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-        if (data['data'] != null && data['data']['states'] != null) {
-          final states = data['data']['states'] as List;
-          stateList = states.map((e) => e['name'].toString()).toList();
-          update();
+      final String baseUrl = ApiWrapper.baseUrl.replaceAll('/user/', '/vendor/common/');
+      final uri = Uri.parse('${baseUrl}states/IN');
+      final response = await ApiWrapper.client
+          .get(uri, headers: Utility.commonHeader(isDefaultAuthorizationKeyAdd: false))
+          .timeout(const Duration(seconds: 30));
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final body = jsonDecode(response.body);
+        if (body['isSuccess'] == true && body['data'] != null) {
+          final List data = body['data'];
+          stateListMap = data.map((e) => e as Map<String, dynamic>).toList();
+          stateList = stateListMap.map((e) => e['name'].toString().trim()).where((s) => s.isNotEmpty).toSet().toList();
+          stateList.sort((a, b) => a.compareTo(b));
         }
       }
-    } catch (_) {}
+    } catch (e) {
+      log('Error fetching states: $e');
+    }
+    isFetchingStates = false;
+    update();
   }
 
   Future<void> fetchCities(String stateName) async {
+    selectedState = stateName;
+    selectedCity = null;
+    cityList = [];
+    isFetchingCities = true;
+    update();
+
+    String stateCode = "";
+    for (var s in stateListMap) {
+      if (s['name'].toString().toLowerCase() == stateName.toLowerCase()) {
+        stateCode = s['isoCode'].toString();
+        break;
+      }
+    }
+
+    if (stateCode.isNotEmpty) {
+      try {
+        final String baseUrl = ApiWrapper.baseUrl.replaceAll('/user/', '/vendor/common/');
+        final uri = Uri.parse('${baseUrl}cities/IN/$stateCode');
+        final response = await ApiWrapper.client
+            .get(uri, headers: Utility.commonHeader(isDefaultAuthorizationKeyAdd: false))
+            .timeout(const Duration(seconds: 30));
+        if (response.statusCode >= 200 && response.statusCode < 300) {
+          final body = jsonDecode(response.body);
+          if (body['isSuccess'] == true && body['data'] != null) {
+            final List data = body['data'];
+            cityList = data
+                .map((e) => e['name'].toString().trim())
+                .where((c) => c.isNotEmpty)
+                .toSet()
+                .toList();
+            cityList.sort((a, b) => a.compareTo(b));
+          }
+        }
+      } catch (e) {
+        log('Error fetching cities: $e');
+      }
+    }
+
+    isFetchingCities = false;
+    update();
+  }
+
+  Future<void> detectAndFillLocation() async {
     try {
-      final res = await http.get(
-        Uri.parse('https://countriesnow.space/api/v0.1/countries/state/cities/q?country=India&state=$stateName'),
+      Utility.showLoader();
+      isDetectingLocation = true;
+      update();
+
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        Utility.closeLoader();
+        isDetectingLocation = false;
+        update();
+        Utility.showMessage(
+          'Location services are disabled. Please enable GPS.',
+          MessageType.error,
+          null,
+          'OK',
+        );
+        return;
+      }
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+
+      if (permission == LocationPermission.denied) {
+        Utility.closeLoader();
+        isDetectingLocation = false;
+        update();
+        Utility.showMessage(
+          'Location permission denied.',
+          MessageType.error,
+          null,
+          'OK',
+        );
+        return;
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        Utility.closeLoader();
+        isDetectingLocation = false;
+        update();
+        Utility.showMessage(
+          'Location permission permanently denied. Please enable it from app settings.',
+          MessageType.error,
+          null,
+          'OK',
+        );
+        return;
+      }
+
+      final Position position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+        timeLimit: const Duration(seconds: 10),
       );
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-        if (data['data'] != null) {
-          final cities = data['data'] as List;
-          cityList = cities.map((e) => e.toString()).toList();
-          update();
+
+      String detectedState = "";
+      String detectedCity = "";
+      String detectedPostalCode = "";
+
+      // 1️⃣ Direct Google Maps Geocoding API on UI side
+      try {
+        final googleUrl = Uri.parse(
+          'https://maps.googleapis.com/maps/api/geocode/json?latlng=${position.latitude},${position.longitude}&key=${StringConstants.gpooglePlaceKey}',
+        );
+        final gResponse = await ApiWrapper.client
+            .get(googleUrl)
+            .timeout(const Duration(seconds: 8));
+
+        if (gResponse.statusCode == 200 && gResponse.body.isNotEmpty) {
+          final resData = jsonDecode(gResponse.body);
+          if (resData['status'] == 'OK' &&
+              resData['results'] is List &&
+              (resData['results'] as List).isNotEmpty) {
+            final firstResult = resData['results'][0];
+            final comps = firstResult['address_components'] as List? ?? [];
+
+            String getComp(List<String> types) {
+              final found = comps.firstWhereOrNull(
+                (c) =>
+                    c is Map &&
+                    (c['types'] as List?)?.any((t) => types.contains(t)) == true,
+              );
+              return found != null ? (found['long_name']?.toString() ?? '') : '';
+            }
+
+            detectedCity = getComp(['locality']).isNotEmpty
+                ? getComp(['locality'])
+                : getComp(['administrative_area_level_2']);
+            detectedState = getComp(['administrative_area_level_1']);
+            detectedPostalCode = getComp(['postal_code']);
+          }
+        }
+      } catch (gErr) {
+        log("Profile direct Google Geocoding error: $gErr");
+      }
+
+      // 2️⃣ Fallback: Placemark from coordinates
+      if (detectedState.isEmpty || detectedCity.isEmpty) {
+        try {
+          final placemarks = await placemarkFromCoordinates(
+            position.latitude,
+            position.longitude,
+          );
+          if (placemarks.isNotEmpty) {
+            final p = placemarks.first;
+            if (detectedState.isEmpty) detectedState = p.administrativeArea ?? "";
+            if (detectedCity.isEmpty) detectedCity = p.locality ?? p.subAdministrativeArea ?? "";
+            if (detectedPostalCode.isEmpty) detectedPostalCode = p.postalCode ?? "";
+          }
+        } catch (e) {
+          log("Placemark error: $e");
         }
       }
-    } catch (_) {}
+
+      // 3️⃣ Fallback: Backend reverse-geocode
+      if (detectedState.isEmpty || detectedCity.isEmpty) {
+        try {
+          final uri = Uri.parse('${ApiWrapper.baseUrl}reverse-geocode');
+          final response = await ApiWrapper.client
+              .post(
+                uri,
+                body: jsonEncode({
+                  'lat': position.latitude,
+                  'lng': position.longitude,
+                }),
+                headers: Utility.commonHeader(isDefaultAuthorizationKeyAdd: false),
+              )
+              .timeout(const Duration(seconds: 10));
+
+          if (response.statusCode == 200 && response.body.isNotEmpty) {
+            final resData = jsonDecode(response.body);
+            if (resData is Map && resData['Data'] != null) {
+              final data = resData['Data'];
+              if (detectedState.isEmpty) detectedState = data['state']?.toString() ?? "";
+              if (detectedCity.isEmpty) detectedCity = data['city']?.toString() ?? "";
+              if (detectedPostalCode.isEmpty) detectedPostalCode = data['pincode']?.toString() ?? "";
+            }
+          }
+        } catch (e) {
+          log("Backend reverse-geocode error: $e");
+        }
+      }
+
+      if (stateList.isEmpty) {
+        await fetchStates();
+      }
+
+      if (detectedState.isNotEmpty) {
+        String matchedState = detectedState;
+        for (var s in stateList) {
+          if (s.toLowerCase() == detectedState.toLowerCase() ||
+              detectedState.toLowerCase().contains(s.toLowerCase()) ||
+              s.toLowerCase().contains(detectedState.toLowerCase())) {
+            matchedState = s;
+            break;
+          }
+        }
+        selectedState = matchedState;
+        await fetchCities(matchedState);
+      }
+
+      if (detectedCity.isNotEmpty) {
+        selectedCity = detectedCity;
+        if (!cityList.contains(detectedCity)) {
+          cityList.insert(0, detectedCity);
+        }
+      }
+
+      if (detectedPostalCode.isNotEmpty) {
+        pinCodeController.text = detectedPostalCode;
+      }
+
+      Utility.closeLoader();
+
+      if (detectedCity.isNotEmpty || detectedState.isNotEmpty) {
+        Utility.showMessage(
+          'Location detected: ${detectedCity.isNotEmpty ? detectedCity : detectedState}',
+          MessageType.success,
+          null,
+          'OK',
+        );
+      } else {
+        Utility.showMessage(
+          'Unable to detect city/state from current location.',
+          MessageType.error,
+          null,
+          'OK',
+        );
+      }
+    } catch (e) {
+      Utility.closeLoader();
+      Utility.showMessage(
+        'Failed to detect location: $e',
+        MessageType.error,
+        null,
+        'OK',
+      );
+    } finally {
+      isDetectingLocation = false;
+      update();
+    }
   }
 
   bool _isFetchingProfile = false;
@@ -105,8 +411,12 @@ class ProfileController extends GetxController {
 
         fullNameController.text = data['full_name']?.toString() ?? '';
         emailController.text = data['email']?.toString() ?? '';
-        phoneNumberController.text = data['phone_no']?.toString() ?? '';
+        final fetchedPhone = data['phone_no']?.toString() ?? '';
+        phoneNumberController.text = fetchedPhone;
+        initialPhoneNo = fetchedPhone.trim();
+        isPhoneAlreadyRegistered = false;
         pinCodeController.text = data['zip_code']?.toString() ?? '';
+
         
         final stateFromApi = data['state']?.toString();
         if (stateFromApi != null && stateFromApi.isNotEmpty) {
@@ -131,6 +441,10 @@ class ProfileController extends GetxController {
           LocalKeys.userId,
           data['_id']?.toString() ?? '',
         );
+
+        if (Get.isRegistered<BottomBarController>()) {
+          Get.find<BottomBarController>().refreshUserDetails();
+        }
 
         update();
       }
@@ -159,14 +473,92 @@ class ProfileController extends GetxController {
     }
   }
 
+  void onPhoneChanged(String value) {
+    update();
+    final cleanPhone = value.replaceAll(RegExp(r'[^0-9]'), '');
+    final cleanInitial = initialPhoneNo.replaceAll(RegExp(r'[^0-9]'), '');
+
+    if (cleanPhone.length < 10) {
+      if (isPhoneAlreadyRegistered) {
+        isPhoneAlreadyRegistered = false;
+        update();
+      }
+      return;
+    }
+
+    if (cleanPhone == cleanInitial) {
+      if (isPhoneAlreadyRegistered) {
+        isPhoneAlreadyRegistered = false;
+        update();
+      }
+      return;
+    }
+
+    if (cleanPhone.length == 10) {
+      _phoneCheckDebounce?.cancel();
+      _phoneCheckDebounce = Timer(const Duration(milliseconds: 350), () async {
+        await checkPhoneIfRegistered(cleanPhone);
+      });
+    }
+  }
+
+  Future<void> checkPhoneIfRegistered(String phone) async {
+    final cleanInitial = initialPhoneNo.replaceAll(RegExp(r'[^0-9]'), '');
+    if (phone == cleanInitial) {
+      isPhoneAlreadyRegistered = false;
+      update();
+      return;
+    }
+
+    isCheckingPhone = true;
+    update();
+
+    try {
+      final response = await profilePresenter.checkPhoneRegistered(phoneNo: phone);
+      if (!response.hasError && response.data.isNotEmpty) {
+        final body = jsonDecode(response.data);
+
+        if (body is Map && body['Data'] is Map) {
+          final isRegistered = body['Data']['is_registered'] == true;
+          isPhoneAlreadyRegistered = isRegistered;
+        } else if (body is Map && body['is_registered'] == true) {
+          isPhoneAlreadyRegistered = true;
+        } else {
+          isPhoneAlreadyRegistered = false;
+        }
+      }
+    } catch (e) {
+      debugPrint("Error checking phone registration: $e");
+    } finally {
+      isCheckingPhone = false;
+      update();
+    }
+  }
+
   /// Update profile (calls presenter.updateProfile)
   Future<void> updateProfile() async {
+    if (isCheckingPhone) {
+      Utility.showMessage("Please wait, checking phone number...", MessageType.information, null, "OK");
+      return;
+    }
+
+    if (isPhoneAlreadyRegistered) {
+      Utility.showMessage(
+        "This phone number is already registered with another account.",
+        MessageType.error,
+        null,
+        "OK",
+      );
+      return;
+    }
+
     if (!saveKey.currentState!.validate()) return;
 
     final fullName = fullNameController.text.trim();
     final email = emailController.text.trim();
     final phoneNo = phoneNumberController.text.trim();
     final country = "India"; // if you have UI field, use it
+
     final state = selectedState ?? "";
     final city = selectedCity ?? "";
     final zip = pinCodeController.text.trim();
@@ -742,4 +1134,11 @@ class ProfileController extends GetxController {
     await repo.deleteAllSecuredValues();
     RouteManagement.gotoLoginScreen();
   }
+
+  @override
+  void onClose() {
+    _phoneCheckDebounce?.cancel();
+    super.onClose();
+  }
 }
+

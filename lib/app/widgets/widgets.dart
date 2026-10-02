@@ -5,5 +5,6 @@ export 'pull_to_refresh_wrapper.dart';
 export 'restricted_time_picker.dart';
 export 'custom_country_picker_field.dart';
 export 'custom_text_form_field.dart';
+export 'facility_icon_widget.dart';
 export 'show_full_scareen_image.dart';
 export 'thumbnail_Image_Fullpage.dart';

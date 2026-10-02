@@ -125,7 +125,11 @@ Row(
           onPressed: () async {
             final phone = controller.phoneForOtp.isNotEmpty
                 ? controller.phoneForOtp
-                : controller.phoneNumberController.text.trim();
+                : (AuthController.savedPhoneForOtp.isNotEmpty
+                    ? AuthController.savedPhoneForOtp
+                    : (controller.logainMobileNumberController.text.trim().isNotEmpty
+                        ? controller.logainMobileNumberController.text.trim()
+                        : controller.phoneNumberController.text.trim()));
 
             if (phone.isEmpty) {
               Utility.showMessage('Phone number not available', MessageType.error, null, 'ok');

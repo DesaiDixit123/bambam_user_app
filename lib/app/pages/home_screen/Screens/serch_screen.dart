@@ -224,8 +224,7 @@ class SerchScreen extends StatelessWidget {
                 Dimens.boxHeight30,
 
                 if (controller.tripMode != 2) ...[
-                  // --- ONE WAY or ROUND TRIP common "From" field ---
-                  // If Airport Pickup -> "From Airport", else "From Location" or just "From"
+                  // --- ONE WAY, ROUND TRIP or AIRPORT "From" field ---
                   Text(
                     (controller.tripMode == 3)
                         ? (controller.pickupType == 'pickup'
@@ -236,150 +235,102 @@ class SerchScreen extends StatelessWidget {
                   ),
                   Dimens.boxHeight8,
 
-                  if (controller.tripMode == 3 &&
-                      controller.pickupType == 'drop')
-                    CityAutocompleteField(
-                      controller: controller.formController,
-                      optionsBuilder: (textEditingValue) async {
-                        if (textEditingValue.text.isEmpty) {
-                          return const Iterable<String>.empty();
-                        }
-                        return await GooglePlacesHelper.searchAddress(
-                          textEditingValue.text,
-                          StringConstants.gpooglePlaceKey,
-                        );
-                      },
-                      onChanged: (_) => controller.update(),
-                      decoration: InputDecoration(
-                        hintText: "Enter Pickup Address",
-                        hintStyle: Styles.txtG7Colors40014,
-                        filled: true,
-                        fillColor: ColorsValue.whiteColor,
-                        contentPadding: Dimens.edgeInsets16,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(Dimens.twelve),
-                          borderSide: BorderSide(
-                            color: ColorsValue.borderColors,
-                            width: 1,
-                          ),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(Dimens.twelve),
-                          borderSide: BorderSide(
-                            color: ColorsValue.borderColors,
-                            width: 1,
-                          ),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(Dimens.twelve),
-                          borderSide: BorderSide(
-                            color: ColorsValue.appColor,
-                            width: 1.5,
-                          ),
-                        ),
-                        suffixIcon: null,
-                      ),
-                      style: Styles.txtBlackColorW40014,
-                    )
-                  else
-                    CityAutocompleteField(
-                      controller: controller.formController,
-                      optionsBuilder: (textEditingValue) {
-                        if (textEditingValue.text.isEmpty) {
-                          return const Iterable<String>.empty();
-                        }
-                        if (controller.tripMode == 3 &&
-                            controller.pickupType == 'pickup') {
-                          return AirportsList.airports.where(
-                            (airport) => airport.toLowerCase().contains(
-                              textEditingValue.text.toLowerCase(),
-                            ),
-                          );
-                        }
-                        return CitiesList.cities.where(
-                          (city) => city.toLowerCase().contains(
+                  CityAutocompleteField(
+                    controller: controller.formController,
+                    showPoweredByGoogle: !(controller.tripMode == 3 && controller.pickupType == 'pickup'),
+                    optionsBuilder: (textEditingValue) async {
+                      if (textEditingValue.text.trim().isEmpty) {
+                        return const Iterable<String>.empty();
+                      }
+                      if (controller.tripMode == 3 && controller.pickupType == 'pickup') {
+                        return AirportsList.allAirports.where(
+                          (airport) => airport.toLowerCase().contains(
                             textEditingValue.text.toLowerCase(),
                           ),
                         );
-                      },
-                      onChanged: (_) => controller.update(),
-                      decoration: InputDecoration(
-                        hintText:
-                            (controller.tripMode == 3 &&
-                                controller.pickupType == 'pickup')
-                            ? "Select From Airport"
-                            : "Enter Location".tr,
-                        hintStyle: Styles.txtG7Colors40014,
-                        filled: true,
-                        fillColor: ColorsValue.whiteColor,
-                        contentPadding: Dimens.edgeInsets16,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(Dimens.twelve),
-                          borderSide: BorderSide(
-                            color: ColorsValue.borderColors,
-                            width: 1,
-                          ),
+                      }
+                      return await GooglePlacesHelper.searchAddress(
+                        textEditingValue.text,
+                        StringConstants.gpooglePlaceKey,
+                      );
+                    },
+                    onChanged: (_) => controller.update(),
+                    decoration: InputDecoration(
+                      hintText: (controller.tripMode == 3 && controller.pickupType == 'pickup')
+                          ? "Select From Airport"
+                          : (controller.tripMode == 3 && controller.pickupType == 'drop')
+                              ? "Enter Pickup Address"
+                              : "Enter Location".tr,
+                      hintStyle: Styles.txtG7Colors40014,
+                      filled: true,
+                      fillColor: ColorsValue.whiteColor,
+                      contentPadding: Dimens.edgeInsets16,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(Dimens.twelve),
+                        borderSide: BorderSide(
+                          color: ColorsValue.borderColors,
+                          width: 1,
                         ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(Dimens.twelve),
-                          borderSide: BorderSide(
-                            color: ColorsValue.borderColors,
-                            width: 1,
-                          ),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(Dimens.twelve),
+                        borderSide: BorderSide(
+                          color: ColorsValue.borderColors,
+                          width: 1,
                         ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(Dimens.twelve),
-                          borderSide: BorderSide(
-                            color: ColorsValue.appColor,
-                            width: 1.5,
-                          ),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(Dimens.twelve),
+                        borderSide: BorderSide(
+                          color: ColorsValue.appColor,
+                          width: 1.5,
                         ),
-                        suffixIcon: controller.tripMode == 3
-                            ? null
-                            : GestureDetector(
-                                onTap: () {
-                                  controller.useCurrentLocationAndFillCity();
-                                },
-                                child: Padding(
-                                  padding: const EdgeInsets.only(right: 8.0),
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                      vertical: 8,
+                      ),
+                      suffixIcon: (controller.tripMode == 3 && controller.pickupType == 'pickup')
+                          ? null
+                          : GestureDetector(
+                              onTap: () {
+                                controller.useCurrentLocationAndFillCity();
+                              },
+                              child: Padding(
+                                padding: const EdgeInsets.only(right: 8.0),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 8,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: ColorsValue.appColor.withOpacity(
+                                      0.08,
                                     ),
-                                    decoration: BoxDecoration(
-                                      color: ColorsValue.appColor.withOpacity(
-                                        0.08,
+                                    borderRadius: BorderRadius.circular(30),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.my_location,
+                                        size: 16,
+                                        color: ColorsValue.appColor,
                                       ),
-                                      borderRadius: BorderRadius.circular(30),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(
-                                          Icons.my_location,
-                                          size: 16,
-                                          color: ColorsValue.appColor,
-                                        ),
-                                        Dimens.boxWidth6,
-                                        Text(
-                                          "current_location".tr,
-                                          style: Styles.appColorw50014,
-                                        ),
-                                      ],
-                                    ),
+                                      Dimens.boxWidth6,
+                                      Text(
+                                        "current_location".tr,
+                                        style: Styles.appColorw50014,
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ),
-                      ),
-                      style: Styles.txtBlackColorW40014,
+                            ),
                     ),
+                    style: Styles.txtBlackColorW40014,
+                  ),
                 ],
 
-                // Hide swap button for Airport mode and Local Rental
-                if (controller.tripMode != 3 && controller.tripMode != 2) ...[
+                // Swap button for One Way, Round Trip, and Airport
+                if (controller.tripMode != 2) ...[
                   Dimens.boxHeight12,
-                  // Swap button
                   Center(
                     child: InkWell(
                       borderRadius: BorderRadius.circular(30),
@@ -416,41 +367,92 @@ class SerchScreen extends StatelessWidget {
                   Dimens.boxHeight12,
                 ],
 
+
                 //Dimens.boxHeight20,
 
                 // --- CONDITIONAL: Round Trip -> multiple "To" cities UI; OneWay -> single To; Local -> City only ---
                 if (controller.tripMode == 2) ...[
-                  // Local Rental: single City input
+                  // Local Rental: single City/Location input
                   Text("City".tr, style: Styles.txtBlackColorW50014),
                   Dimens.boxHeight8,
                   CityAutocompleteField(
                     controller: controller.localCityController,
-                    optionsBuilder: (textEditingValue) {
-                      if (textEditingValue.text.isEmpty) {
+                    showPoweredByGoogle: true,
+                    optionsBuilder: (textEditingValue) async {
+                      if (textEditingValue.text.trim().isEmpty) {
                         return const Iterable<String>.empty();
                       }
-                      return CitiesList.cities.where(
-                        (city) => city.toLowerCase().contains(
-                          textEditingValue.text.toLowerCase(),
-                        ),
+                      return await GooglePlacesHelper.searchAddress(
+                        textEditingValue.text,
+                        StringConstants.gpooglePlaceKey,
                       );
                     },
                     onChanged: (_) => controller.update(),
                     decoration: InputDecoration(
                       hintText: "Enter City".tr,
+                      hintStyle: Styles.txtG7Colors40014,
                       filled: true,
-                      fillColor: ColorsValue.bulycolorsCB,
+                      fillColor: ColorsValue.whiteColor,
+                      contentPadding: Dimens.edgeInsets16,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(Dimens.twelve),
-                        borderSide: BorderSide.none,
+                        borderSide: BorderSide(
+                          color: ColorsValue.borderColors,
+                          width: 1,
+                        ),
                       ),
-                      suffixIcon: const Icon(Icons.search),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(Dimens.twelve),
+                        borderSide: BorderSide(
+                          color: ColorsValue.borderColors,
+                          width: 1,
+                        ),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(Dimens.twelve),
+                        borderSide: BorderSide(
+                          color: ColorsValue.appColor,
+                          width: 1.5,
+                        ),
+                      ),
+                      suffixIcon: GestureDetector(
+                        onTap: () {
+                          controller.useCurrentLocationAndFillCity();
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.only(right: 8.0),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: ColorsValue.appColor.withOpacity(0.08),
+                              borderRadius: BorderRadius.circular(30),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.my_location,
+                                  size: 16,
+                                  color: ColorsValue.appColor,
+                                ),
+                                Dimens.boxWidth6,
+                                Text(
+                                  "current_location".tr,
+                                  style: Styles.appColorw50014,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
                     style: Styles.txtBlackColorW40014,
                   ),
                 ] else ...[
                   // One Way or Round Trip: show "To" area (single or multiple)
-                  // Text("To".tr, style: Styles.txtBlackColorW50014),
                   Dimens.boxHeight8,
                   if (controller.tripMode == 1) ...[
                     // Round Trip: multiple destination fields + add/remove
@@ -468,54 +470,39 @@ class SerchScreen extends StatelessWidget {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  " To".tr,
+                                  " To ${controller.toControllers.length > 1 ? (index + 1) : ""}".tr,
                                   style: Styles.txtBlackColorW50014,
                                 ),
                                 Dimens.boxHeight5,
                                 Container(
-                                  // pill-like background
                                   decoration: BoxDecoration(
-                                    color: ColorsValue
-                                        .bulycolorsCB, // light card background
+                                    color: ColorsValue.whiteColor,
                                     borderRadius: BorderRadius.circular(
-                                      Dimens.twenty,
+                                      Dimens.twelve,
+                                    ),
+                                    border: Border.all(
+                                      color: ColorsValue.borderColors,
+                                      width: 1,
                                     ),
                                   ),
-                                  // padding: EdgeInsets.symmetric(
-                                  //   horizontal: Dimens.sixteen,
-                                  //   vertical: Dimens.twelve,
-                                  // ),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 4,
+                                  ),
                                   child: Row(
                                     children: [
                                       Expanded(
                                         child: CityAutocompleteField(
                                           controller: tc,
                                           isDense: true,
-                                          optionsBuilder: (textEditingValue) {
-                                            if (textEditingValue.text.isEmpty) {
-                                              return const Iterable<
-                                                String
-                                              >.empty();
+                                          showPoweredByGoogle: true,
+                                          optionsBuilder: (textEditingValue) async {
+                                            if (textEditingValue.text.trim().isEmpty) {
+                                              return const Iterable<String>.empty();
                                             }
-                                            if (controller.tripMode == 3 &&
-                                                controller.pickupType ==
-                                                    'drop') {
-                                              return AirportsList.airports
-                                                  .where(
-                                                    (airport) => airport
-                                                        .toLowerCase()
-                                                        .contains(
-                                                          textEditingValue.text
-                                                              .toLowerCase(),
-                                                        ),
-                                                  );
-                                            }
-                                            return CitiesList.cities.where(
-                                              (city) =>
-                                                  city.toLowerCase().contains(
-                                                    textEditingValue.text
-                                                        .toLowerCase(),
-                                                  ),
+                                            return await GooglePlacesHelper.searchAddress(
+                                              textEditingValue.text,
+                                              StringConstants.gpooglePlaceKey,
                                             );
                                           },
                                           onChanged: (_) => controller.update(),
@@ -530,14 +517,13 @@ class SerchScreen extends StatelessWidget {
                                       ),
 
                                       // spacing between text and buttons
-                                      Dimens.boxWidth12,
+                                      Dimens.boxWidth8,
 
                                       // Right-side buttons group (minus and plus)
                                       Row(
                                         children: [
                                           // remove button (only show when more than 1 destination)
-                                          if (controller.toControllers.length >
-                                              1)
+                                          if (controller.toControllers.length > 1)
                                             GestureDetector(
                                               onTap: () =>
                                                   controller.removeToAt(index),
@@ -546,11 +532,9 @@ class SerchScreen extends StatelessWidget {
                                                 width: Dimens.thirtySix,
                                                 decoration: BoxDecoration(
                                                   shape: BoxShape.circle,
-                                                  color: ColorsValue
-                                                      .whiteColor, // white circle
+                                                  color: ColorsValue.whiteColor,
                                                   border: Border.all(
-                                                    color: ColorsValue
-                                                        .borderColors,
+                                                    color: ColorsValue.borderColors,
                                                   ),
                                                   boxShadow: [
                                                     BoxShadow(
@@ -564,21 +548,19 @@ class SerchScreen extends StatelessWidget {
                                                   child: Icon(
                                                     Icons.remove,
                                                     size: Dimens.fifteen,
-                                                    color:
-                                                        ColorsValue.txtRedColor,
+                                                    color: ColorsValue.txtRedColor,
                                                   ),
                                                 ),
                                               ),
                                             ),
 
-                                          if (controller.toControllers.length >
-                                              1)
+                                          if (controller.toControllers.length > 1)
                                             Dimens.boxWidth8,
 
-                                          // add button (only on last row)
+                                          // add button (only on last row and if < 5)
                                           if (index ==
-                                              controller.toControllers.length -
-                                                  1)
+                                                  controller.toControllers.length - 1 &&
+                                              controller.toControllers.length < 5)
                                             GestureDetector(
                                               onTap: () =>
                                                   controller.addNewTo(),
@@ -589,8 +571,7 @@ class SerchScreen extends StatelessWidget {
                                                   shape: BoxShape.circle,
                                                   color: ColorsValue.whiteColor,
                                                   border: Border.all(
-                                                    color: ColorsValue
-                                                        .borderColors,
+                                                    color: ColorsValue.borderColors,
                                                   ),
                                                   boxShadow: [
                                                     BoxShadow(
@@ -621,7 +602,7 @@ class SerchScreen extends StatelessWidget {
                       ],
                     ),
                   ] else ...[
-                    // One Way - single to input (simple)
+                    // One Way or Airport - single to input
                     Text(
                       (controller.tripMode == 3)
                           ? (controller.pickupType == 'drop'
@@ -631,113 +612,70 @@ class SerchScreen extends StatelessWidget {
                       style: Styles.txtBlackColorW50014,
                     ),
                     Dimens.boxHeight8,
-                    if (controller.tripMode == 3 &&
-                        controller.pickupType == 'pickup')
-                      CityAutocompleteField(
-                        controller: controller.toController,
-                        optionsBuilder: (textEditingValue) async {
-                          if (textEditingValue.text.isEmpty) {
-                            return const Iterable<String>.empty();
-                          }
-                          return await GooglePlacesHelper.searchAddress(
-                            textEditingValue.text,
-                            StringConstants.gpooglePlaceKey,
-                          );
-                        },
-                        onChanged: (_) => controller.update(),
-                        decoration: InputDecoration(
-                          hintText: "Enter Drop Address",
-                          hintStyle: Styles.txtG7Colors40014,
-                          filled: true,
-                          fillColor: ColorsValue.whiteColor,
-                          contentPadding: Dimens.edgeInsets16,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(Dimens.twelve),
-                            borderSide: BorderSide(
-                              color: ColorsValue.borderColors,
-                              width: 1,
-                            ),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(Dimens.twelve),
-                            borderSide: BorderSide(
-                              color: ColorsValue.borderColors,
-                              width: 1,
-                            ),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(Dimens.twelve),
-                            borderSide: BorderSide(
-                              color: ColorsValue.appColor,
-                              width: 1.5,
-                            ),
-                          ),
-                          suffixIcon: null,
-                        ),
-                        style: Styles.txtBlackColorW40014,
-                      )
-                    else
-                      CityAutocompleteField(
-                        controller: controller.toController,
-                        optionsBuilder: (textEditingValue) {
-                          if (textEditingValue.text.isEmpty) {
-                            return const Iterable<String>.empty();
-                          }
-                          if (controller.tripMode == 3 &&
-                              controller.pickupType == 'drop') {
-                            return AirportsList.airports.where(
-                              (airport) => airport.toLowerCase().contains(
-                                textEditingValue.text.toLowerCase(),
-                              ),
-                            );
-                          }
-                          return CitiesList.cities.where(
-                            (city) => city.toLowerCase().contains(
+                    CityAutocompleteField(
+                      controller: controller.toController,
+                      showPoweredByGoogle: !(controller.tripMode == 3 && controller.pickupType == 'drop'),
+                      optionsBuilder: (textEditingValue) async {
+                        if (textEditingValue.text.trim().isEmpty) {
+                          return const Iterable<String>.empty();
+                        }
+                        if (controller.tripMode == 3 &&
+                            controller.pickupType == 'drop') {
+                          return AirportsList.allAirports.where(
+                            (airport) => airport.toLowerCase().contains(
                               textEditingValue.text.toLowerCase(),
                             ),
                           );
-                        },
-                        onChanged: (_) => controller.update(),
-                        decoration: InputDecoration(
-                          hintText:
-                              (controller.tripMode == 3 &&
-                                  controller.pickupType == 'drop')
-                              ? "Select To Airport"
-                              : "Enter Location".tr,
-                          hintStyle: Styles.txtG7Colors40014,
-                          filled: true,
-                          fillColor: ColorsValue.whiteColor,
-                          contentPadding: Dimens.edgeInsets16,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(Dimens.twelve),
-                            borderSide: BorderSide(
-                              color: ColorsValue.borderColors,
-                              width: 1,
-                            ),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(Dimens.twelve),
-                            borderSide: BorderSide(
-                              color: ColorsValue.borderColors,
-                              width: 1,
-                            ),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(Dimens.twelve),
-                            borderSide: BorderSide(
-                              color: ColorsValue.appColor,
-                              width: 1.5,
-                            ),
-                          ),
-                          suffixIcon: Icon(
-                            Icons.location_on_outlined,
+                        }
+                        return await GooglePlacesHelper.searchAddress(
+                          textEditingValue.text,
+                          StringConstants.gpooglePlaceKey,
+                        );
+                      },
+                      onChanged: (_) => controller.update(),
+                      decoration: InputDecoration(
+                        hintText: (controller.tripMode == 3 &&
+                                controller.pickupType == 'drop')
+                            ? "Select To Airport"
+                            : (controller.tripMode == 3 &&
+                                    controller.pickupType == 'pickup')
+                                ? "Enter Drop Address"
+                                : "Enter Location".tr,
+                        hintStyle: Styles.txtG7Colors40014,
+                        filled: true,
+                        fillColor: ColorsValue.whiteColor,
+                        contentPadding: Dimens.edgeInsets16,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(Dimens.twelve),
+                          borderSide: BorderSide(
                             color: ColorsValue.borderColors,
+                            width: 1,
                           ),
                         ),
-                        style: Styles.txtBlackColorW40014,
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(Dimens.twelve),
+                          borderSide: BorderSide(
+                            color: ColorsValue.borderColors,
+                            width: 1,
+                          ),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(Dimens.twelve),
+                          borderSide: BorderSide(
+                            color: ColorsValue.appColor,
+                            width: 1.5,
+                          ),
+                        ),
+                        suffixIcon: Icon(
+                          Icons.location_on_outlined,
+                          color: ColorsValue.borderColors,
+                        ),
                       ),
+                      style: Styles.txtBlackColorW40014,
+                    ),
                   ],
                 ],
+
 
                 Dimens.boxHeight25,
 

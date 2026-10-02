@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+
 class AirportsList {
   static const List<String> airports = [
     "Indira Gandhi International Airport, New Delhi, Delhi, India",
@@ -122,4 +125,32 @@ class AirportsList {
     "Car Nicobar Airport, Car Nicobar, Andaman & Nicobar Islands, India",
     "Campbell Bay Airport, Great Nicobar, India",
   ];
+
+  static List<String> dynamicAirports = [];
+
+  static List<String> get allAirports =>
+      dynamicAirports.isNotEmpty ? dynamicAirports : airports;
+
+  static Future<void> fetchAirports() async {
+    try {
+      final res = await http.get(
+        Uri.parse("https://apis.bambamcabs.com/vendor/trips/get-indian-airports"),
+      ).timeout(const Duration(seconds: 5));
+      if (res.statusCode == 200) {
+        final decoded = jsonDecode(res.body);
+        final list = (decoded is Map && decoded['data'] is List)
+            ? decoded['data']
+            : (decoded is List ? decoded : []);
+        final parsed = list.map<String>((item) {
+          if (item is Map) {
+            return (item['full_address'] ?? item['airport_name'] ?? '').toString().trim();
+          }
+          return item.toString().trim();
+        }).where((s) => s.isNotEmpty).toList();
+        if (parsed.isNotEmpty) {
+          dynamicAirports = parsed;
+        }
+      }
+    } catch (_) {}
+  }
 }

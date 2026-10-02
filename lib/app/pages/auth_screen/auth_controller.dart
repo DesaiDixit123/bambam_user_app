@@ -19,12 +19,15 @@ import 'package:bam_bam_user/data/helpers/api_wrapper.dart';
 import 'package:bam_bam_user/domain/entities/enums.dart';
 import 'package:bam_bam_user/domain/repositories/local_storage_keys.dart';
 import 'package:bam_bam_user/domain/repositories/repository.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:bam_bam_user/device/notification_service.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
 
 class AuthController extends GetxController {
   AuthController(this.authPresenter);
@@ -45,6 +48,9 @@ class AuthController extends GetxController {
   @override
   void onInit() {
     super.onInit();
+    if (Get.arguments != null && Get.arguments is String && (Get.arguments as String).isNotEmpty) {
+      phoneForOtp = Get.arguments as String;
+    }
     // v6: construct GoogleSignIn with serverClientId so Android gets an idToken
     _googleSignIn = GoogleSignIn(
       serverClientId: SERVER_CLIENT_ID,
@@ -58,6 +64,9 @@ class AuthController extends GetxController {
     bool showLoader = true,
   }) async {
     FocusManager.instance.primaryFocus?.unfocus();
+    debugPrint('👉 signInWithFacebook triggered! isSignup: $isSignup');
+    isSigningIn = true;
+    update();
     try {
       final LoginResult result = await FacebookAuth.instance.login(
         permissions: ['public_profile', 'email'],
@@ -145,11 +154,14 @@ class AuthController extends GetxController {
     } catch (e) {
       debugPrint('Facebook login error: $e');
       Utility.showMessage(
-        'Facebook login error',
+        'Facebook login error: $e',
         MessageType.error,
         null,
         'OK',
       );
+    } finally {
+      isSigningIn = false;
+      update();
     }
   }
 
@@ -230,12 +242,17 @@ class AuthController extends GetxController {
 
   Future<void> signInWithGoogle({required bool isSignup}) async {
     FocusManager.instance.primaryFocus?.unfocus();
+    debugPrint('👉 signInWithGoogle triggered! isSignup: $isSignup');
     isSigningIn = true;
     update();
 
     try {
-      // Sign out first to always show the account picker fresh
-      await _googleSignIn.signOut();
+      // Sign out first with timeout so it never blocks or hangs
+      try {
+        await _googleSignIn.signOut().timeout(const Duration(seconds: 1));
+      } catch (signOutErr) {
+        debugPrint('Google signOut ignored/failed: $signOutErr');
+      }
 
       // v6 API: call signIn() — shows account picker
       final GoogleSignInAccount? user = await _googleSignIn.signIn();
@@ -275,8 +292,13 @@ class AuthController extends GetxController {
       }
 
       final fcmToken = await NotificationService.getFCMToken();
+      final String tokenToSend = (idToken != null && idToken.isNotEmpty)
+          ? idToken
+          : (firebaseIdToken ?? user.serverAuthCode ?? accessToken ?? '');
+      debugPrint('Sending token to backend (length: ${tokenToSend.length}, isGoogleIdToken: ${tokenToSend == idToken})');
+
       final Map<String, dynamic> payload = {
-        'id_token': firebaseIdToken ?? idToken ?? user.serverAuthCode ?? accessToken ?? '',
+        'id_token': tokenToSend,
         'email': user.email,
         'full_name': user.displayName ?? '',
         'profile_image': user.photoUrl ?? '',
@@ -304,6 +326,32 @@ class AuthController extends GetxController {
           if (token.isNotEmpty) {
             Get.find<Repository>().saveValue(LocalKeys.authToken, token);
           }
+
+          Map<String, dynamic> userMap = {};
+          if (data is Map) {
+            if (data['userdetails'] is Map) {
+              userMap = Map<String, dynamic>.from(data['userdetails']);
+            } else if (data['user'] is Map) {
+              userMap = Map<String, dynamic>.from(data['user']);
+            } else if (data['userData'] is Map) {
+              userMap = Map<String, dynamic>.from(data['userData']);
+            }
+          }
+          if (userMap.isEmpty || (userMap['full_name']?.toString().isEmpty ?? true)) {
+            userMap['full_name'] = user.displayName ?? '';
+            userMap['email'] = user.email;
+            userMap['profile_image'] = user.photoUrl ?? '';
+          }
+          Get.find<Repository>().saveValue(
+            LocalKeys.userDetails,
+            jsonEncode(userMap),
+          );
+          if (userMap.containsKey('_id')) {
+            Get.find<Repository>().saveValue(
+              LocalKeys.userId,
+              userMap['_id']?.toString() ?? '',
+            );
+          }
         }
         Utility.showMessage(
           res['Message']?.toString() ?? 'Success',
@@ -313,8 +361,9 @@ class AuthController extends GetxController {
         );
         RouteManagement.gotoBottomBarScreen();
       } else {
+        final errorMsg = res['Message'] ?? res['message'] ?? res['error'] ?? 'Google login failed. Please try again.';
         Utility.showMessage(
-          res['Message']?.toString() ?? 'Google login failed',
+          errorMsg.toString(),
           MessageType.error,
           null,
           'OK',
@@ -322,16 +371,38 @@ class AuthController extends GetxController {
       }
     } catch (e, st) {
       debugPrint('Google sign in failed: $e\n$st');
-      Utility.showMessage(
-        'Error: $e',
-        MessageType.error,
-        null,
-        'OK',
-      );
+      final readableMsg = _parseGoogleSignInError(e);
+      if (readableMsg.isNotEmpty) {
+        Utility.showMessage(
+          readableMsg,
+          MessageType.error,
+          null,
+          'OK',
+        );
+      }
     } finally {
       isSigningIn = false;
       update();
     }
+  }
+
+  String _parseGoogleSignInError(dynamic error) {
+    final errStr = error.toString();
+    if (errStr.contains('ApiException: 10') || errStr.contains(': 10:')) {
+      return "Google Sign-In Error (Code 10): SHA-1 Fingerprint is not added in Firebase Console for this device.";
+    } else if (errStr.contains('ApiException: 12500') || errStr.contains(': 12500:')) {
+      return "Google Sign-In Error (Code 12500): Google Play Services error or unauthorized account.";
+    } else if (errStr.contains('ApiException: 7') || errStr.toLowerCase().contains('network')) {
+      return "Network error: Unable to connect to Google Services. Please check your internet connection.";
+    } else if (error is PlatformException) {
+      if (error.code == 'sign_in_canceled' || (error.message?.toLowerCase().contains('cancel') ?? false)) {
+        return ""; // User cancelled account picker
+      }
+      return error.message?.isNotEmpty == true
+          ? error.message!
+          : "Google Sign-In failed (${error.code})";
+    }
+    return "Google Sign-In failed. Please try again.";
   }
 
   Future<Map<String, dynamic>> _postToBackend(
@@ -344,9 +415,20 @@ class AuthController extends GetxController {
       final response = await ApiWrapper.client
           .post(Uri.parse(url), headers: headers, body: json.encode(payload))
           .timeout(const Duration(seconds: 30));
-      return json.decode(response.body) as Map<String, dynamic>;
+      if (response.body.isEmpty) {
+        return {'IsSuccess': false, 'Message': 'Empty response from server', 'Data': null};
+      }
+      try {
+        final decoded = json.decode(response.body);
+        if (decoded is Map<String, dynamic>) {
+          return decoded;
+        }
+        return {'IsSuccess': false, 'Message': 'Invalid response format from server', 'Data': null};
+      } catch (jsonErr) {
+        return {'IsSuccess': false, 'Message': 'Server error (${response.statusCode})', 'Data': null};
+      }
     } catch (e) {
-      return {'IsSuccess': false, 'Message': 'Network error', 'Data': null};
+      return {'IsSuccess': false, 'Message': 'Network error: Please check your internet connection', 'Data': null};
     }
   }
 
@@ -457,6 +539,7 @@ class AuthController extends GetxController {
   @override
   void onClose() {
     _resendTimer?.cancel();
+    _phoneCheckDebounce?.cancel();
     super.onClose();
   }
 
@@ -473,10 +556,32 @@ class AuthController extends GetxController {
   }
 
   String receivedOtp = "";
-  String phoneForOtp = "";
+  static String savedPhoneForOtp = "";
+  String _phoneForOtp = "";
+
+  String get phoneForOtp {
+    if (_phoneForOtp.isNotEmpty) return _phoneForOtp;
+    if (savedPhoneForOtp.isNotEmpty) return savedPhoneForOtp;
+    if (Get.arguments != null && Get.arguments is String && (Get.arguments as String).isNotEmpty) {
+      return Get.arguments as String;
+    }
+    if (logainMobileNumberController.text.trim().isNotEmpty) {
+      return logainMobileNumberController.text.trim();
+    }
+    if (phoneNumberController.text.trim().isNotEmpty) {
+      return phoneNumberController.text.trim();
+    }
+    return "";
+  }
+
+  set phoneForOtp(String val) {
+    _phoneForOtp = val;
+    savedPhoneForOtp = val;
+  }
 
   void setServerOtpAndPhone({required String phone, required String otp}) {
     phoneForOtp = phone;
+    savedPhoneForOtp = phone;
     receivedOtp = otp;
     update();
   }
@@ -484,6 +589,7 @@ class AuthController extends GetxController {
   Future<void> sendOtp({required String phone, bool showLoader = true}) async {
     FocusManager.instance.primaryFocus?.unfocus();
     phoneForOtp = phone;
+    savedPhoneForOtp = phone;
     update();
 
     final response = await authPresenter.sendOtp(
@@ -530,7 +636,7 @@ class AuthController extends GetxController {
       receivedOtp = otp;
       update();
       startResendCooldown(seconds: 30);
-      RouteManagement.gotoOtpVerifyScreen();
+      RouteManagement.gotoOtpVerifyScreen(phone);
       Future.delayed(const Duration(milliseconds: 300), () {
         Utility.showMessage('OTP sent', MessageType.success, null, 'OK');
       });
@@ -539,20 +645,57 @@ class AuthController extends GetxController {
         Utility.showMessage('OTP sent', MessageType.success, null, 'OK');
       });
       startResendCooldown(seconds: 30);
-      RouteManagement.gotoOtpVerifyScreen();
+      RouteManagement.gotoOtpVerifyScreen(phone);
     }
   }
 
   Future<void> signUp() async {
     FocusManager.instance.primaryFocus?.unfocus();
+
+    final phoneNo = phoneNumberController.text.trim();
+
+    // 1. If already detected as registered, block immediately
+    if (isPhoneAlreadyRegistered) {
+      Utility.showMessage(
+        'This phone number is already registered. Please login.',
+        MessageType.error,
+        null,
+        'OK',
+      );
+      isLogin = true;
+      logainMobileNumberController.text = phoneNo;
+      update();
+      return;
+    }
+
     if (!singUpKey.currentState!.validate()) return;
+
+    // 2. Pre-check with server before submitting signup
+    final checkRes = await authPresenter.checkPhoneRegistered(phoneNo: phoneNo, showLoader: true);
+    if (!checkRes.hasError && checkRes.data != null) {
+      try {
+        final body = jsonDecode(checkRes.data);
+        if (body is Map && body['Data'] is Map && body['Data']['is_registered'] == true) {
+          isPhoneAlreadyRegistered = true;
+          isLogin = true;
+          logainMobileNumberController.text = phoneNo;
+          update();
+          Utility.showMessage(
+            'This phone number is already registered. Please login.',
+            MessageType.error,
+            null,
+            'OK',
+          );
+          return;
+        }
+      } catch (_) {}
+    }
 
     final fullName = fullNameController.text.trim();
     final email = emailController.text.trim();
-    final phoneNo = phoneNumberController.text.trim();
     final country = "India";
-    final state = selectedState.isNotEmpty ? selectedState : "Gujarat";
-    final city = selectedCity.isNotEmpty ? selectedCity : "Surat";
+    final state = selectedState.isNotEmpty ? selectedState : "";
+    final city = selectedCity.isNotEmpty ? selectedCity : "";
     final zipCode = pinCodeController.text.trim();
 
     final fcmToken = await NotificationService.getFCMToken();
@@ -573,9 +716,39 @@ class AuthController extends GetxController {
     if (response.hasError) {
       try {
         final body = jsonDecode(response.data);
+        final bool isAlreadyRegistered = body is Map && (
+          body['is_already_registered'] == true ||
+          (body['Data'] is Map && body['Data']['is_already_registered'] == true) ||
+          (body['Message'] != null && (
+            body['Message'].toString().toLowerCase().contains('already registered') ||
+            body['Message'].toString().toLowerCase().contains('already exist')
+          )) ||
+          (body['message'] != null && (
+            body['message'].toString().toLowerCase().contains('already registered') ||
+            body['message'].toString().toLowerCase().contains('already exist')
+          ))
+        );
+
+        if (isAlreadyRegistered) {
+          isPhoneAlreadyRegistered = true;
+          isLogin = true;
+          logainMobileNumberController.text = phoneNo;
+          update();
+
+          Utility.showMessage(
+            'This phone number is already registered. Please login.',
+            MessageType.error,
+            null,
+            'OK',
+          );
+          return; // DO NOT SEND OTP!
+        }
+
         final msg = (body is Map && body.containsKey('message'))
             ? body['message']
-            : response.data;
+            : (body is Map && body.containsKey('Message'))
+                ? body['Message']
+                : response.data;
         Utility.showMessage(msg.toString(), MessageType.error, null, 'ok');
       } catch (_) {
         Utility.showMessage(
@@ -598,11 +771,11 @@ class AuthController extends GetxController {
         }
       }
       setServerOtpAndPhone(phone: phoneNo, otp: otp);
-      RouteManagement.gotoOtpVerifyScreen();
+      RouteManagement.gotoOtpVerifyScreen(phoneNo);
       fullNameController.clear();
       emailController.clear();
     } catch (e) {
-      RouteManagement.gotoOtpVerifyScreen();
+      RouteManagement.gotoOtpVerifyScreen(phoneNo);
     }
   }
 
@@ -613,7 +786,11 @@ class AuthController extends GetxController {
     final otpToVerify = code.trim();
     final phone = phoneForOtp.isNotEmpty
         ? phoneForOtp
-        : phoneNumberController.text.trim();
+        : (savedPhoneForOtp.isNotEmpty
+            ? savedPhoneForOtp
+            : (logainMobileNumberController.text.trim().isNotEmpty
+                ? logainMobileNumberController.text.trim()
+                : phoneNumberController.text.trim()));
 
     final fcmToken = await NotificationService.getFCMToken();
 
@@ -718,6 +895,7 @@ class AuthController extends GetxController {
     emailController.clear();
     phoneNumberController.clear();
     pinCodeController.clear();
+    isPhoneAlreadyRegistered = false;
   }
 
   GlobalKey<FormState> singUpKey = GlobalKey<FormState>();
@@ -725,6 +903,75 @@ class AuthController extends GetxController {
   TextEditingController emailController = TextEditingController();
   TextEditingController phoneNumberController = TextEditingController();
   TextEditingController pinCodeController = TextEditingController();
+
+  bool isPhoneAlreadyRegistered = false;
+  bool isCheckingPhone = false;
+  Timer? _phoneCheckDebounce;
+
+  void onSignupPhoneChanged(String value) {
+    update();
+    final cleanPhone = value.replaceAll(RegExp(r'[^0-9]'), '');
+    if (cleanPhone.length < 10) {
+      if (isPhoneAlreadyRegistered) {
+        isPhoneAlreadyRegistered = false;
+        update();
+      }
+      return;
+    }
+
+    if (cleanPhone.length == 10) {
+      _phoneCheckDebounce?.cancel();
+      _phoneCheckDebounce = Timer(const Duration(milliseconds: 300), () async {
+        await checkPhoneIfRegistered(cleanPhone);
+      });
+    }
+  }
+
+  Future<void> checkPhoneIfRegistered(String phone) async {
+    isCheckingPhone = true;
+    update();
+
+    try {
+      final response = await authPresenter.checkPhoneRegistered(phoneNo: phone);
+      if (!response.hasError && response.data != null) {
+        final body = jsonDecode(response.data);
+        if (body is Map && body['Data'] is Map) {
+          final isRegistered = body['Data']['is_registered'] == true;
+          isPhoneAlreadyRegistered = isRegistered;
+          if (isRegistered) {
+            Utility.showMessage(
+              "This phone number is already registered. Please login.",
+              MessageType.error,
+              null,
+              "OK",
+            );
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint("Error checking phone registration: $e");
+    } finally {
+      isCheckingPhone = false;
+      update();
+    }
+  }
+
+  bool get isSignupFormValid {
+    if (fullNameController.text.trim().isEmpty) return false;
+    final phone = phoneNumberController.text.trim().replaceAll(RegExp(r'[^0-9]'), '');
+    if (phone.length != 10) return false;
+    if (isPhoneAlreadyRegistered) return false;
+    if (isCheckingPhone) return false;
+    if (selectedState.trim().isEmpty) return false;
+    if (selectedCity.trim().isEmpty) return false;
+    if (emailController.text.trim().isNotEmpty && !GetUtils.isEmail(emailController.text.trim())) {
+      return false;
+    }
+    if (pinCodeController.text.trim().isNotEmpty && pinCodeController.text.trim().length != 6) {
+      return false;
+    }
+    return true;
+  }
   // TextEditingController Controller = TextEditingController();
 
   List<Map<String, dynamic>> stateListMap = [];
@@ -737,6 +984,8 @@ class AuthController extends GetxController {
   bool isFetchingStates = false;
   bool isFetchingCities = false;
 
+  bool isDetectingLocation = false;
+
   Future<void> fetchStates() async {
     isFetchingStates = true;
     update();
@@ -747,8 +996,8 @@ class AuthController extends GetxController {
         if (body['isSuccess'] == true && body['data'] != null) {
           final List data = body['data'];
           stateListMap = data.map((e) => e as Map<String, dynamic>).toList();
-          stateList = stateListMap.map((e) => e['name'].toString()).toList();
-          // State is not auto-selected to force user choice
+          stateList = stateListMap.map((e) => e['name'].toString().trim()).where((s) => s.isNotEmpty).toSet().toList();
+          stateList.sort((a, b) => a.compareTo(b));
         } else {
           Utility.errorMessage("Failed to load states from server.");
         }
@@ -772,7 +1021,7 @@ class AuthController extends GetxController {
 
     String stateCode = "";
     for (var s in stateListMap) {
-      if (s['name'] == stateName) {
+      if (s['name'].toString().toLowerCase() == stateName.toLowerCase()) {
         stateCode = s['isoCode'].toString();
         break;
       }
@@ -785,8 +1034,12 @@ class AuthController extends GetxController {
           final body = jsonDecode(response.data);
           if (body['isSuccess'] == true && body['data'] != null) {
             final List data = body['data'];
-            cityList = data.map((e) => e['name'].toString()).toList();
-            // City is not auto-selected to force user choice
+            cityList = data
+                .map((e) => e['name'].toString().trim())
+                .where((c) => c.isNotEmpty)
+                .toSet()
+                .toList();
+            cityList.sort((a, b) => a.compareTo(b));
           } else {
             Utility.errorMessage("Failed to load cities for the selected state.");
           }
@@ -801,6 +1054,213 @@ class AuthController extends GetxController {
 
     isFetchingCities = false;
     update();
+  }
+
+  Future<void> detectAndFillLocation() async {
+    try {
+      Utility.showLoader();
+      isDetectingLocation = true;
+      update();
+
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        Utility.closeLoader();
+        isDetectingLocation = false;
+        update();
+        Utility.showMessage(
+          'Location services are disabled. Please enable GPS.',
+          MessageType.error,
+          null,
+          'OK',
+        );
+        return;
+      }
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+
+      if (permission == LocationPermission.denied) {
+        Utility.closeLoader();
+        isDetectingLocation = false;
+        update();
+        Utility.showMessage(
+          'Location permission denied.',
+          MessageType.error,
+          null,
+          'OK',
+        );
+        return;
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        Utility.closeLoader();
+        isDetectingLocation = false;
+        update();
+        Utility.showMessage(
+          'Location permission permanently denied. Please enable it from app settings.',
+          MessageType.error,
+          null,
+          'OK',
+        );
+        return;
+      }
+
+      final Position position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+        timeLimit: const Duration(seconds: 10),
+      );
+
+      String detectedState = "";
+      String detectedCity = "";
+      String detectedPostalCode = "";
+
+      // 1. Try Reverse Geocoding with placemarks
+      // 1️⃣ Direct Google Maps Geocoding API on UI side
+      try {
+        final googleUrl = Uri.parse(
+          'https://maps.googleapis.com/maps/api/geocode/json?latlng=${position.latitude},${position.longitude}&key=${StringConstants.gpooglePlaceKey}',
+        );
+        final gResponse = await ApiWrapper.client
+            .get(googleUrl)
+            .timeout(const Duration(seconds: 8));
+
+        if (gResponse.statusCode == 200 && gResponse.body.isNotEmpty) {
+          final resData = jsonDecode(gResponse.body);
+          if (resData['status'] == 'OK' &&
+              resData['results'] is List &&
+              (resData['results'] as List).isNotEmpty) {
+            final firstResult = resData['results'][0];
+            final comps = firstResult['address_components'] as List? ?? [];
+
+            String getComp(List<String> types) {
+              final found = comps.firstWhereOrNull(
+                (c) =>
+                    c is Map &&
+                    (c['types'] as List?)?.any((t) => types.contains(t)) == true,
+              );
+              return found != null ? (found['long_name']?.toString() ?? '') : '';
+            }
+
+            detectedCity = getComp(['locality']).isNotEmpty
+                ? getComp(['locality'])
+                : getComp(['administrative_area_level_2']);
+            detectedState = getComp(['administrative_area_level_1']);
+            detectedPostalCode = getComp(['postal_code']);
+          }
+        }
+      } catch (gErr) {
+        log("Auth direct Google Geocoding error: $gErr");
+      }
+
+      // 2️⃣ Fallback: Placemark from coordinates
+      if (detectedState.isEmpty || detectedCity.isEmpty) {
+        try {
+          final placemarks = await placemarkFromCoordinates(
+            position.latitude,
+            position.longitude,
+          );
+          if (placemarks.isNotEmpty) {
+            final p = placemarks.first;
+            if (detectedState.isEmpty) detectedState = p.administrativeArea ?? "";
+            if (detectedCity.isEmpty) detectedCity = p.locality ?? p.subAdministrativeArea ?? "";
+            if (detectedPostalCode.isEmpty) detectedPostalCode = p.postalCode ?? "";
+          }
+        } catch (e) {
+          log("Placemark error: $e");
+        }
+      }
+
+      // 3️⃣ Fallback: Backend reverse-geocode if needed
+      if (detectedState.isEmpty || detectedCity.isEmpty) {
+        try {
+          final uri = Uri.parse('${ApiWrapper.baseUrl}reverse-geocode');
+          final response = await ApiWrapper.client
+              .post(
+                uri,
+                body: jsonEncode({
+                  'lat': position.latitude,
+                  'lng': position.longitude,
+                }),
+                headers: Utility.commonHeader(isDefaultAuthorizationKeyAdd: false),
+              )
+              .timeout(const Duration(seconds: 10));
+
+          if (response.statusCode == 200 && response.body.isNotEmpty) {
+            final resData = jsonDecode(response.body);
+            if (resData is Map && resData['Data'] != null) {
+              final data = resData['Data'];
+              if (detectedState.isEmpty) detectedState = data['state']?.toString() ?? "";
+              if (detectedCity.isEmpty) detectedCity = data['city']?.toString() ?? "";
+              if (detectedPostalCode.isEmpty) detectedPostalCode = data['pincode']?.toString() ?? "";
+            }
+          }
+        } catch (e) {
+          log("Backend reverse-geocode error: $e");
+        }
+      }
+
+      if (stateList.isEmpty) {
+        await fetchStates();
+      }
+
+      if (detectedState.isNotEmpty) {
+        String matchedState = detectedState;
+        for (var s in stateList) {
+          if (s.toLowerCase() == detectedState.toLowerCase() ||
+              detectedState.toLowerCase().contains(s.toLowerCase()) ||
+              s.toLowerCase().contains(detectedState.toLowerCase())) {
+            matchedState = s;
+            break;
+          }
+        }
+        selectedState = matchedState;
+        await fetchCities(matchedState);
+      }
+
+      if (detectedCity.isNotEmpty) {
+        selectedCity = detectedCity;
+        if (!cityList.contains(detectedCity)) {
+          cityList.insert(0, detectedCity);
+        }
+      }
+
+      if (detectedPostalCode.isNotEmpty) {
+        pinCodeController.text = detectedPostalCode;
+      }
+
+      Utility.closeLoader();
+
+      if (detectedCity.isNotEmpty || detectedState.isNotEmpty) {
+        Utility.showMessage(
+          'Location detected: ${detectedCity.isNotEmpty ? detectedCity : detectedState}',
+          MessageType.success,
+          null,
+          'OK',
+        );
+      } else {
+        Utility.showMessage(
+          'Unable to detect city/state from current location.',
+          MessageType.error,
+          null,
+          'OK',
+        );
+      }
+    } catch (e) {
+      Utility.closeLoader();
+      log("Error detecting location: $e");
+      Utility.showMessage(
+        'Failed to detect location: ${e.toString()}',
+        MessageType.error,
+        null,
+        'OK',
+      );
+    } finally {
+      Utility.closeLoader();
+      isDetectingLocation = false;
+      update();
+    }
   }
 
   // ---------------------------------------------------------otp Screen------------------------------------------------------

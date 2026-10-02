@@ -18,9 +18,12 @@ class AuthBinding extends Bindings {
       fenix: true,
     );
 
-    // Then AuthController depends on AuthPresenter
-    Get.lazyPut<AuthController>(
-      () => AuthController(Get.find<AuthPresenter>()),
-    );
+    // Keep AuthController instance across auth screens (Login, Signup, OtpVerify)
+    if (!Get.isRegistered<AuthController>()) {
+      Get.lazyPut<AuthController>(
+        () => AuthController(Get.find<AuthPresenter>()),
+        fenix: true,
+      );
+    }
   }
 }

@@ -73,7 +73,25 @@ class ProfileScreen extends StatelessWidget {
                 ),
               ),
 
-              Dimens.boxHeight60,
+              Dimens.boxHeight16,
+              Center(
+                child: Text(
+                  controller.userName.isNotEmpty ? controller.userName : "User",
+                  style: Styles.txtBlackColorW70020,
+                  textAlign: TextAlign.center,
+                ),
+              ),
+              if (controller.userPhone.isNotEmpty) ...[
+                Dimens.boxHeight4,
+                Center(
+                  child: Text(
+                    controller.userPhone,
+                    style: Styles.txtG7Colors40014,
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ],
+              Dimens.boxHeight30,
               ListTile(
                 title: Text(
                   "personal_information".tr,
@@ -192,7 +210,7 @@ class ProfileScreen extends StatelessWidget {
               ),
               ListTile(
                 title: Text(
-                  "become a partner",
+                  "become a vendor",
                   style: Styles.txtBlackColorW60016,
                 ),
                 onTap: () {

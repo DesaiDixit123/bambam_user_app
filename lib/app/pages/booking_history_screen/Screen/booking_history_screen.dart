@@ -212,33 +212,48 @@ Widget _buildBookingCard({
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(vehicle?['brand_name']?.toString() ?? 'Vehicle',
-                            style: Styles.txtBlackColorW40014),
-                        Text(
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            vehicle?['brand_name']?.toString() ?? 'Vehicle',
+                            style: Styles.txtBlackColorW40014,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Dimens.boxHeight2,
+                          Text(
                             vehicle?['vehicle_type'] is Map
                                 ? (vehicle!['vehicle_type']['name'] ?? '')
-                                : (vehicle?['vehicle_type']?.toString() ??
-                                    tripType),
-                            style: Styles.txtG7Colors40014),
-                      ],
+                                : (vehicle?['vehicle_type']?.toString() ?? tripType),
+                            style: Styles.txtG7Colors40014,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
                     ),
+                    const SizedBox(width: 8),
                     carPhotoUrl != null
                         ? Image.network(
                             carPhotoUrl,
-                            height: Dimens.eighty,
-                            width: Dimens.eighty,
-                            fit: BoxFit.cover,
+                            height: Dimens.sixty,
+                            width: Dimens.hundred,
+                            fit: BoxFit.contain,
                             errorBuilder: (_, __, ___) => Image.asset(
-                                AssetConstants.CarImge,
-                                height: Dimens.eighty,
-                                width: Dimens.hundredEighty),
+                              AssetConstants.CarImge,
+                              height: Dimens.sixty,
+                              width: Dimens.hundred,
+                              fit: BoxFit.contain,
+                            ),
                           )
-                        : Image.asset(AssetConstants.CarImge,
-                            height: Dimens.eighty,
-                            width: Dimens.hundredEighty),
+                        : Image.asset(
+                            AssetConstants.CarImge,
+                            height: Dimens.sixty,
+                            width: Dimens.hundred,
+                            fit: BoxFit.contain,
+                          ),
                   ],
                 ),
 
@@ -472,13 +487,13 @@ Widget _buildBookingCard({
 
   Widget _buildStatusTabBar(BookingHistoryController controller) {
     final List<String> statusTabs = [
-      "Completed",
+      "All",
       "Pending",
       "Confirmed",
       "D & V Allocated",
+      "Completed",
       "Cancelled",
       "Expired",
-      "All",
     ];
 
     return SizedBox(
@@ -490,7 +505,7 @@ Widget _buildBookingCard({
         itemBuilder: (context, index) {
           final tab = statusTabs[index];
           final isSelected = controller.selectedStatus.toLowerCase() == tab.toLowerCase() ||
-              (controller.selectedStatus.isEmpty && tab == "Completed");
+              (controller.selectedStatus.isEmpty && tab == "All");
           final count = controller.getStatusCount(tab);
 
           return GestureDetector(

@@ -65,4 +65,6 @@ abstract class AssetConstants {
   static const String logout_bg = "assets/svg/logout_bg.svg";
   static const String person = "assets/image/person.png";
   static const String btn_bg = "assets/image/btn_bg.png";
+  static const String carConfirm = "assets/image/car.png";
+  static const String big_btn = "assets/image/big_btn.png";
 }

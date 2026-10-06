@@ -1337,13 +1337,21 @@ print(  bookingDetails?['travelDetails']['_id'] ?? '');
     required String bookingId,
     required String pickupAddress,
     String? dropAddress,
+    String? pickupDate,
+    String? pickupTime,
   }) async {
-    final payload = {
+    final payload = <String, dynamic>{
       "bookingId": bookingId,
       "pickup_address": pickupAddress.trim(),
     };
     if (dropAddress != null && dropAddress.trim().isNotEmpty) {
       payload["drop_address"] = dropAddress.trim();
+    }
+    if (pickupDate != null && pickupDate.trim().isNotEmpty) {
+      payload["pickup_date"] = pickupDate.trim();
+    }
+    if (pickupTime != null && pickupTime.trim().isNotEmpty) {
+      payload["pickup_time"] = pickupTime.trim();
     }
 
     final res = await bookingHistoryPresenter.updateBookingAddress(payload);
@@ -1352,17 +1360,17 @@ print(  bookingDetails?['travelDetails']['_id'] ?? '');
       try {
         final body = jsonDecode(res.data ?? '{}');
         Utility.showMessage(
-          body['Message'] ?? "Failed to update address",
+          body['Message'] ?? "Failed to update booking details",
           MessageType.error,
           null,
           "OK",
         );
       } catch (_) {
-        Utility.showMessage("Failed to update address", MessageType.error, null, "OK");
+        Utility.showMessage("Failed to update booking details", MessageType.error, null, "OK");
       }
       return false;
     } else {
-      Utility.showMessage("Address updated successfully", MessageType.success, null, "OK");
+      Utility.showMessage("Booking details updated successfully", MessageType.success, null, "OK");
       return true;
     }
   }

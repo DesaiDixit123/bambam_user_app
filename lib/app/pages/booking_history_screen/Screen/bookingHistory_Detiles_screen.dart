@@ -18,9 +18,11 @@ import 'dart:typed_data';
 
 import 'package:path_provider/path_provider.dart';
 import 'package:bam_bam_user/app/widgets/facility_icon_widget.dart';
+import 'package:bam_bam_user/app/widgets/custom_time_picker.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:http/http.dart' as http;
 
 class BookinghistoryDetilesScreen extends StatefulWidget {
   const BookinghistoryDetilesScreen({super.key});
@@ -446,6 +448,15 @@ class _BookinghistoryDetilesScreenState
         Color textColor;
         String displayStatusText = 'Booking Completed';
 
+        final num pendingPayVal = num.tryParse(pendingPayment) ?? 0;
+        final num totalPayNumVal = num.tryParse(totalPayment) ?? 0;
+        final num paidPayVal = num.tryParse(paidAmount) ?? 0;
+        final String payStatusLower = (data["payment_status"] ?? "").toString().toLowerCase();
+        final bool isBookingPaid = pendingPayVal <= 0 ||
+            payStatusLower == "completed" ||
+            payStatusLower == "paid" ||
+            (paidPayVal >= totalPayNumVal && totalPayNumVal > 0);
+
         if (statusLower == "confirmed") {
           badgeImage = AssetConstants.Green_CN;
           textColor = const Color(0xFFFF5A00); // Orange-red matching #ff5a00
@@ -466,10 +477,14 @@ class _BookinghistoryDetilesScreenState
           badgeImage = AssetConstants.Green_CN;
           textColor = const Color(0xFF00C0E8); // Cyan
           displayStatusText = "Driver & Vehicle Allocated";
-        } else if (statusLower.contains("complete")) {
+        } else if (statusLower.contains("complete") || (statusLower == "payment pending" && isBookingPaid)) {
           badgeImage = AssetConstants.Green_CN;
           textColor = const Color(0xFF12724A); // Green
           displayStatusText = "Booking Completed";
+        } else if (statusLower == "payment pending") {
+          badgeImage = AssetConstants.Green_CN;
+          textColor = ColorsValue.appColor;
+          displayStatusText = "Payment Pending";
         } else if (statusLower == "driver arrived") {
           badgeImage = AssetConstants.Green_CN;
           textColor = const Color(0xFFF59E0B); // Amber
@@ -588,11 +603,14 @@ class _BookinghistoryDetilesScreenState
         final double effectiveDiscount = hasFbData && fbDiscountAmount > 0 ? fbDiscountAmount : discountAmount;
 
         final double savedTotalBeforeTax = double.tryParse((fareSummary['total_fare_before_tax'] ?? travel['total_fare_before_tax'] ?? "0").toString()) ?? 0.0;
+        final double calculatedBeforeTax = (effectiveBaseFare + extraKmCharge + specialServicesPrice + effectiveWaitingCharge - effectiveDiscount).clamp(0.0, double.infinity);
         final double totalFareBeforeTax = (hasFbData && fbMap?['total_fare_before_tax'] != null)
             ? (double.tryParse(fbMap!['total_fare_before_tax'].toString()) ?? 0.0)
-            : (savedTotalBeforeTax > 0
-                ? savedTotalBeforeTax
-                : ((effectiveBaseFare + extraKmCharge + specialServicesPrice + effectiveWaitingCharge - effectiveDiscount).clamp(0.0, double.infinity)));
+            : (hasFbData && fbMap?['final_base_fare'] != null)
+                ? (double.tryParse(fbMap!['final_base_fare'].toString()) ?? 0.0)
+                : (extraKmCharge > 0 || hasFbData || effectiveWaitingCharge > 0)
+                    ? calculatedBeforeTax
+                    : (savedTotalBeforeTax > 0 ? savedTotalBeforeTax : calculatedBeforeTax);
 
         final double effectiveGstPercent = hasFbData ? fbGstPercent : gstPercent;
         final double savedGstAmount = double.tryParse((fareSummary['gst_amount'] ?? travel['gst_amount'] ?? "0").toString()) ?? 0.0;
@@ -688,8 +706,10 @@ class _BookinghistoryDetilesScreenState
                       Expanded(
                         child: Text(
                           statusLower == "driver arrived"
-                              ? "Your driver has arrived at the pickup location. Please share the OTP: $tripTrackingOtp"
-                              : "Your driver is waiting at the pickup location. Please meet the driver and share the OTP to start the trip.",
+                              ? (tripTrackingOtp != "null" && tripTrackingOtp.isNotEmpty
+                                  ? "Your driver has arrived at the pickup location. Please share the OTP: $tripTrackingOtp"
+                                  : "Your driver has arrived at the pickup location.")
+                              : "Your driver has been allocated for this booking.",
                           style: Styles.txtBlackColorW60016.copyWith(
                             fontSize: 14,
                             color: ColorsValue.appColor,
@@ -1104,6 +1124,8 @@ class _BookinghistoryDetilesScreenState
                                 dropAddress,
                                 from,
                                 toDisplay,
+                                date,
+                                pickupTime,
                               );
                             },
                           ),
@@ -1350,7 +1372,12 @@ class _BookinghistoryDetilesScreenState
                   : SizedBox.shrink(),
               Dimens.boxHeight16,
 
-              (tripTrackingOtp != "null" && tripTrackingOtp.isNotEmpty && !statusLower.contains("complete") && !statusLower.contains("cancel") && !statusLower.contains("expire"))
+              (tripTrackingOtp != "null" &&
+               tripTrackingOtp.isNotEmpty &&
+               (data["ride_started"] == true || statusLower.contains("arrived") || statusLower.contains("ongoing")) &&
+               !statusLower.contains("complete") &&
+               !statusLower.contains("cancel") &&
+               !statusLower.contains("expire"))
                   ? Container(
                       width: double.infinity,
                       padding: EdgeInsets.all(18),
@@ -1918,9 +1945,24 @@ class _BookinghistoryDetilesScreenState
     String fileName,
     Map<String, dynamic> booking,
   ) async {
-    String html = await rootBundle.loadString("assets/invoice/$fileName");
+    final travel = booking["travelDetails"] ?? {};
+    final String rawTripType = (travel["trip_type"] ?? booking["trip_type"] ?? "").toString().toLowerCase();
 
-    final travel = booking["travelDetails"];
+    String selectedFile = fileName;
+    if (selectedFile.isEmpty || selectedFile == "OneWay.html") {
+      if (rawTripType.contains("round")) {
+        selectedFile = "RoundTrip.html";
+      } else if (rawTripType.contains("local")) {
+        selectedFile = "Local.html";
+      } else if (rawTripType.contains("airport")) {
+        selectedFile = "Airport.html";
+      } else {
+        selectedFile = "OneWay.html";
+      }
+    }
+
+    String html = await rootBundle.loadString("assets/invoice/$selectedFile");
+
     String formatDate(String apiDate) {
       try {
         final parsed = DateTime.parse(apiDate); // e.g. 2025-11-25
@@ -1930,85 +1972,156 @@ class _BookinghistoryDetilesScreenState
       }
     }
 
+    final returnDate = travel["return_date"] ?? booking["return_date"];
+    final returnTime = travel["return_time"] ?? booking["return_time"] ?? "";
+    final returnStr = returnDate != null ? "${formatDate(returnDate.toString())} $returnTime".trim() : "-";
+
+    final rentalPkg = travel["package_name"] ?? booking["package_name"] ?? (travel["rental_hours"] != null ? "${travel["rental_hours"]} Hr / ${travel["rental_km"] ?? 0} KM" : "8 Hours / 80 KM");
+
+    final pickupAddr = travel["pickup_address"]?.toString() ?? "";
+    final dropAddr = travel["drop_address"] is List
+        ? (travel["drop_address"] as List).join(", ")
+        : (travel["drop_address"]?.toString() ?? "");
+
+    final pickupType = (travel["pickup_type"] ?? booking["pickup_type"] ?? "").toString().toLowerCase();
+    final isAirportDrop = pickupType == "drop" || (!pickupAddr.toLowerCase().contains("airport") && dropAddr.toLowerCase().contains("airport"));
+    final airportServiceText = isAirportDrop ? "Drop at Airport" : "Pickup from Airport";
+
+    final vrDetails = booking["vendorRequestDetails"] is Map ? (booking["vendorRequestDetails"] as Map) : {};
+    final fbMap = (vrDetails["fare_breakdown"] is Map ? vrDetails["fare_breakdown"] : (booking["fare_breakdown"] is Map ? booking["fare_breakdown"] : {})) as Map;
+    final payment = booking["payment_summary"] is Map ? (booking["payment_summary"] as Map) : {};
+    final travelFare = travel["fare_summary"] is Map ? (travel["fare_summary"] as Map) : {};
+
+    final double baseFareVal = (double.tryParse((fbMap["base_fare"] ?? vrDetails["base_collect_amount"] ?? payment["base_price_before_tax"] ?? travelFare["base_fare"] ?? 0).toString()) ?? 0);
+    final double distanceVal = (double.tryParse((fbMap["total_distance_km"] ?? fbMap["actual_distance_km"] ?? vrDetails["actual_distance_km"] ?? travelFare["total_distance"] ?? travel["distance"] ?? booking["distance"] ?? 0).toString()) ?? 0);
+    final double includedKmVal = (double.tryParse((fbMap["included_km"] ?? vrDetails["upto_km"] ?? travelFare["included_km"] ?? travel["km_included"] ?? booking["included_km"] ?? 0).toString()) ?? 0);
+    final double perKmRateVal = (double.tryParse((fbMap["per_km_price"] ?? vrDetails["per_km_price"] ?? travelFare["per_km_price"] ?? travel["per_km_price"] ?? booking["per_km_price"] ?? 0).toString()) ?? 0);
+    final double extraKmChargeVal = (double.tryParse((fbMap["extra_km_charge"] ?? vrDetails["extra_fare"] ?? payment["extra_km_charge"] ?? travelFare["extra_km_charge"] ?? travel["extra_km_charge"] ?? booking["extra_fare"] ?? 0).toString()) ?? 0);
+    double extraKmVal = (double.tryParse((fbMap["extra_km"] ?? vrDetails["extra_km"] ?? travelFare["extra_km"] ?? travel["extra_km"] ?? booking["extra_km"] ?? 0).toString()) ?? 0);
+    if (extraKmVal <= 0 && extraKmChargeVal > 0 && perKmRateVal > 0) {
+      extraKmVal = extraKmChargeVal / perKmRateVal;
+    }
+
+    double specialAmount = double.tryParse((fbMap["special_services_charge"] ?? travel["total_service_price"] ?? 0).toString()) ?? 0;
+    double offerDiscount = double.tryParse((fbMap["discount_amount"] ?? travel["offer_discount"] ?? payment["discount"] ?? 0).toString()) ?? 0;
+    final double waitingChargeVal = double.tryParse((fbMap["waiting_charge"] ?? vrDetails["waiting_charge"] ?? travelFare["waiting_charge"] ?? booking["waiting_charge"] ?? 0).toString()) ?? 0;
+
+    final double calculatedBeforeTax = (baseFareVal + extraKmChargeVal + specialAmount + waitingChargeVal - offerDiscount).clamp(0.0, double.infinity);
+    double totalBeforeTax = double.tryParse((fbMap["total_fare_before_tax"] ?? fbMap["final_base_fare"] ?? 0).toString()) ?? 0;
+    if (totalBeforeTax <= 0 || extraKmChargeVal > 0) {
+      totalBeforeTax = calculatedBeforeTax > 0 ? calculatedBeforeTax : (double.tryParse((travelFare["total_fare_before_tax"] ?? 0).toString()) ?? 0);
+    }
+
+    final double gstPct = double.tryParse((fbMap["gst_percent"] ?? travelFare["gst_percent"] ?? 5).toString()) ?? 5.0;
+    double gstVal = double.tryParse((fbMap["gst_amount"] ?? 0).toString()) ?? 0;
+    if (gstVal <= 0 && gstPct > 0 && totalBeforeTax > 0) {
+      gstVal = (totalBeforeTax * gstPct) / 100;
+    } else if (gstVal <= 0) {
+      gstVal = double.tryParse((travelFare["gst_amount"] ?? travelFare["gst_included"] ?? booking["gst_amount"] ?? 0).toString()) ?? 0;
+    }
+
+    final totalFareFinal = double.tryParse((fbMap["final_payable_amount"] ?? payment["final_trip_fare"] ?? booking["total_payment"] ?? travel["final_price"] ?? travel["total_price"] ?? 0).toString()) ?? (totalBeforeTax + gstVal);
+
     Map<String, dynamic> values = {
       "customer_name": travel["traveler_name"] ?? "",
       "customer_email": travel["traveler_email"] ?? "",
       "customer_mobile": travel["traveler_mobile"] ?? "",
       "booking_id": booking["booking_id"] ?? "",
       "invoice_id": "INV-${booking["booking_id"]}",
-      "invoice_date": formatDate(booking["createdAt"]),
-      "trip_type": travel["trip_type"] ?? "",
-      "pickup_address": travel["pickup_address"] ?? "",
-      "drop_address": (travel["drop_address"] as List).join(", "),
-      "trip_datetime": "${formatDate(travel["date"])} ${travel["pickup_time"]}",
-      "base_fare": (double.tryParse(travel["fare_summary"]["base_fare"]?.toString() ?? '0') ?? 0).toStringAsFixed(0),
-      "special_services": travel["total_service_price"].toString(),
-      "cgst": ((travel["fare_summary"]["gst_amount"] ?? travel["fare_summary"]["gst_included"] ?? 0) / 2).toString(),
-      "sgst": ((travel["fare_summary"]["gst_amount"] ?? travel["fare_summary"]["gst_included"] ?? 0) / 2).toString(),
-      "total_amount": travel["final_price"].toString(),
+      "invoice_date": formatDate(booking["createdAt"]?.toString() ?? ""),
+      "trip_type": travel["trip_type"] ?? (rawTripType.contains("round") ? "Round Trip" : rawTripType.contains("local") ? "Local Rental" : rawTripType.contains("airport") ? "Airport Transfer" : "One Way"),
+      "pickup_address": pickupAddr,
+      "drop_address": dropAddr,
+      "trip_datetime": "${formatDate(travel["date"]?.toString() ?? "")} ${travel["pickup_time"] ?? ""}".trim(),
+      "return_datetime": returnStr,
+      "rental_package": rentalPkg.toString(),
+      "airport_service": airportServiceText,
+      "base_fare": baseFareVal > 0 ? baseFareVal.toStringAsFixed(0) : (double.tryParse(travelFare["base_fare"]?.toString() ?? '0') ?? 0).toStringAsFixed(0),
+      "special_services": specialAmount.toString(),
+      "cgst": (gstVal / 2).toStringAsFixed(2),
+      "sgst": (gstVal / 2).toStringAsFixed(2),
+      "total_amount": (totalFareFinal % 1 == 0) ? totalFareFinal.toInt().toString() : totalFareFinal.toStringAsFixed(2),
     };
 
-    // ---------- ADD THESE ----------
-    double specialAmount =
-        double.tryParse(values["special_services"] ?? "0") ?? 0;
-
-    String specialServicesRow = "";
-    if (specialAmount > 0) {
-      specialServicesRow =
-          """
-    <tr>
-      <td style="font-size: 14px; padding: 8px 10px; display:flex; justify-content:space-between;">
-        <span>Special Services :</span>
-        <span style="font-weight:600;">₹$specialAmount</span>
-      </td>
-    </tr>
-    """;
-    }
-
-    double offerDiscount = 0;
-
-    try {
-      offerDiscount = (travel["offer_discount"] ?? 0).toDouble();
-    } catch (_) {
-      offerDiscount = 0;
-    }
-
-    String offerRow = "";
-
-    if (offerDiscount >= 0) {
-      offerRow =
-          """
-  <tr>
-    <td style="font-size: 14px; padding:8px 10px; display:flex; justify-content:space-between; color:green;">
-      <span>Offer Discount :</span>
-      <span style="font-weight:600;">-₹${offerDiscount.toStringAsFixed(0)}</span>
-    </td>
-  </tr>
-  """;
-    }
     double pendingPayment = 0;
-
     try {
-      pendingPayment = (travel["pending_payment"] ?? 0).toDouble();
+      pendingPayment = (booking["pending_payment"] ?? travel["pending_payment"] ?? 0).toDouble();
     } catch (_) {
       pendingPayment = 0;
     }
-    String pendingRow = "";
 
-    if (pendingPayment >= 0) {
-      pendingRow =
-          '<tr><td style="font-size:14px;padding:8px 10px;display:flex;justify-content:space-between;color:#E67E22;">'
-          '<span>Pending Payment :</span>'
-          '<span style="font-weight:600;">₹${pendingPayment.toStringAsFixed(0)}</span>'
-          '</td></tr>';
+    final StringBuffer amountBuffer = StringBuffer();
+    if (baseFareVal > 0) {
+      amountBuffer.writeln('<tr><td style="font-size: 14px; padding: 6px 10px; display:flex; justify-content:space-between;"><span>Base Fare :</span><span style="font-weight:600;">₹${baseFareVal.toStringAsFixed(0)}</span></td></tr>');
     }
-    values["pending_row"] = pendingRow;
 
-    values["offer_row"] = offerRow;
+    if (distanceVal > 0) {
+      amountBuffer.writeln('<tr><td style="font-size: 14px; padding: 6px 10px; display:flex; justify-content:space-between;"><span>Total Distance :</span><span style="font-weight:600;">${distanceVal.toStringAsFixed(0)} km</span></td></tr>');
+    }
 
-    values["special_services_row"] = specialServicesRow;
+    if (includedKmVal > 0) {
+      amountBuffer.writeln('<tr><td style="font-size: 14px; padding: 6px 10px; display:flex; justify-content:space-between;"><span>Included KM :</span><span style="font-weight:600;">${includedKmVal.toStringAsFixed(0)} km</span></td></tr>');
+    }
 
-    // -------------------------------
+    if (extraKmVal > 0) {
+      amountBuffer.writeln('<tr><td style="font-size: 14px; padding: 6px 10px; display:flex; justify-content:space-between;"><span>Extra KM :</span><span style="font-weight:600;">${extraKmVal.toStringAsFixed(0)} km</span></td></tr>');
+    }
+    if (perKmRateVal > 0 && extraKmVal > 0) {
+      amountBuffer.writeln('<tr><td style="font-size: 14px; padding: 6px 10px; display:flex; justify-content:space-between;"><span>Per KM Rate :</span><span style="font-weight:600;">₹${perKmRateVal.toStringAsFixed(0)}/km</span></td></tr>');
+    }
+    if (extraKmChargeVal > 0) {
+      amountBuffer.writeln('<tr><td style="font-size: 14px; padding: 6px 10px; display:flex; justify-content:space-between;"><span>Extra KM Charges :</span><span style="font-weight:600;">₹${extraKmChargeVal.toStringAsFixed(0)}</span></td></tr>');
+    }
+
+    // Special services
+    if (specialAmount > 0 || (travel["special_services"] is List && (travel["special_services"] as List).isNotEmpty)) {
+      amountBuffer.writeln('<tr><td style="font-size: 14px; padding: 6px 10px; display:flex; justify-content:space-between; font-weight:700;"><span>Special Services :</span><span style="font-weight:700;">₹${specialAmount.toStringAsFixed(0)}</span></td></tr>');
+      if (travel["special_services"] is List) {
+        for (final s in (travel["special_services"] as List)) {
+          if (s is Map) {
+            final sName = s['service_name'] ?? s['name'] ?? s['description'] ?? 'Special Service';
+            final sAmt = double.tryParse((s['price'] ?? s['amount'] ?? 0).toString()) ?? 0;
+            amountBuffer.writeln('<tr><td style="font-size: 12px; padding: 3px 10px 3px 20px; color:#64748b; display:flex; justify-content:space-between;"><span>➔ $sName :</span><span>₹${sAmt.toStringAsFixed(0)}</span></td></tr>');
+          }
+        }
+      }
+    }
+
+    // Waiting charges
+    if (waitingChargeVal > 0) {
+      amountBuffer.writeln('<tr><td style="font-size: 14px; padding: 6px 10px; display:flex; justify-content:space-between;"><span>Waiting Charges :</span><span style="font-weight:600;">₹${waitingChargeVal.toStringAsFixed(0)}</span></td></tr>');
+    }
+
+    // Taxes
+    if (totalBeforeTax > 0 && gstVal > 0) {
+      amountBuffer.writeln('<tr><td style="font-size: 14px; padding: 6px 10px; border-top: 1px dashed #FFC3A5; color:#FE5A00; font-weight:700; display:flex; justify-content:space-between;"><span>Total Fare (Before Tax) :</span><span>₹${totalBeforeTax.toStringAsFixed(0)}</span></td></tr>');
+    }
+    if (gstVal > 0) {
+      amountBuffer.writeln('<tr><td style="font-size: 14px; padding: 6px 10px; display:flex; justify-content:space-between;"><span>GST (${gstPct.toStringAsFixed(1).replaceAll(RegExp(r'\.0$'), '')}%) :</span><span style="font-weight:600;">₹${gstVal.toStringAsFixed(2)}</span></td></tr>');
+    }
+
+    // Additional Charges (ABC)
+    final double addChargesVal = double.tryParse((fbMap["additional_service_charges"] ?? travelFare["additional_charges"] ?? booking["additional_charges"] ?? 0).toString()) ?? 0;
+    if (addChargesVal > 0) {
+      amountBuffer.writeln('<tr><td style="font-size: 14px; padding: 6px 10px; display:flex; justify-content:space-between;"><span>Additional Charges :</span><span style="font-weight:600;">₹${addChargesVal.toStringAsFixed(0)}</span></td></tr>');
+    }
+
+    // Offer discount
+    if (offerDiscount > 0) {
+      amountBuffer.writeln('<tr><td style="font-size: 14px; padding: 6px 10px; display:flex; justify-content:space-between; color:green;"><span>Offer Discount :</span><span style="font-weight:600;">-₹${offerDiscount.toStringAsFixed(0)}</span></td></tr>');
+    }
+
+    // Pending payment
+    if (pendingPayment > 0) {
+      amountBuffer.writeln('<tr><td style="font-size: 14px; padding: 6px 10px; display:flex; justify-content:space-between; color:#FE5A00;"><span>Pending Payment :</span><span style="font-weight:600;">₹${pendingPayment.toStringAsFixed(0)}</span></td></tr>');
+    }
+
+    // Total Amount Paid
+    final double totalAmountPaidVal = double.tryParse((booking["paid_amount"] ?? booking["sub_total_payment"] ?? values["total_amount"] ?? 0).toString()) ?? (totalBeforeTax + gstVal + addChargesVal);
+    amountBuffer.writeln('<tr><td style="font-size: 14px; font-weight: 700; background-color: #FFF0E8; color: #FE5A00; padding: 8px 10px; display:flex; justify-content:space-between; border-top:1px solid #FFC3A5;"><span>Total Amount Paid :</span><span style="font-weight:700;">₹${(totalAmountPaidVal % 1 == 0) ? totalAmountPaidVal.toInt().toString() : totalAmountPaidVal.toStringAsFixed(2)}</span></td></tr>');
+
+    values["amount_rows"] = amountBuffer.toString();
+    // -------------------------------------------------------------------------------
 
     // Images
     values["logo"] = await assetToBase64("assets/images/logo.png");
@@ -2323,24 +2436,55 @@ class _BookinghistoryDetilesScreenState
     BuildContext context,
     Map<String, dynamic> booking,
   ) async {
-    final html = await loadInvoiceHtml("OneWay.html", booking);
+    final rawBookingId = booking["booking_id"]?.toString() ?? "";
+    final rawMongoId = booking["_id"]?.toString() ?? "";
+    final idToUse = rawMongoId.isNotEmpty ? rawMongoId : rawBookingId.replaceAll("#", "");
 
-    final converter = FlutterNativeHtmlToPdf();
-    final pdf = await converter.convertHtmlToPdf(
-      html: html,
-      targetDirectory: (await getApplicationDocumentsDirectory()).path,
-      targetName: "invoice_${booking["booking_id"]}",
-    );
+    if (idToUse.isEmpty) {
+      Utility.showMessage("Booking ID not found", MessageType.error, null, "OK");
+      return;
+    }
 
-    if (pdf != null) {
-      OpenFilex.open(pdf.path);
-    } else {
-      Utility.showMessage(
-        "Failed to generate PDF",
-        MessageType.error,
-        null,
-        "OK",
-      );
+    final pdfUrl = "https://apis.bambamcabs.com/user/booking/invoice/$idToUse?role=user";
+
+    try {
+      Utility.showMessage("Downloading invoice...", MessageType.information, null, "OK");
+
+      final response = await http.get(
+        Uri.parse(pdfUrl),
+        headers: {
+          "Accept": "application/pdf",
+        },
+      ).timeout(const Duration(seconds: 20));
+
+      if (response.statusCode == 200 && response.bodyBytes.isNotEmpty && response.bodyBytes.length > 500) {
+        Directory dir = await getApplicationDocumentsDirectory();
+        if (Platform.isAndroid) {
+          final extDir = await getExternalStorageDirectory();
+          if (extDir != null) dir = extDir;
+        }
+
+        final fileName = "invoice_${rawBookingId.replaceAll("#", "")}.pdf";
+        final file = File("${dir.path}/$fileName");
+        await file.writeAsBytes(response.bodyBytes);
+
+        final openRes = await OpenFilex.open(file.path);
+        if (openRes.type != ResultType.done) {
+          // If native viewer cannot open, launch browser
+          Utility.launchLinkURL(pdfUrl);
+        }
+        return;
+      }
+    } catch (e) {
+      print("⚠️ Server PDF download error: $e");
+    }
+
+    // Fallback: Open directly in browser / PDF viewer
+    try {
+      Utility.showMessage("Opening invoice in browser...", MessageType.information, null, "OK");
+      Utility.launchLinkURL(pdfUrl);
+    } catch (_) {
+      Utility.showMessage("Failed to open invoice", MessageType.error, null, "OK");
     }
   }
 
@@ -2352,8 +2496,10 @@ class _BookinghistoryDetilesScreenState
     String currentPickup,
     String currentDrop,
     String pickupCity,
-    String dropCity,
-  ) {
+    String dropCity, [
+    String? currentPickupDate,
+    String? currentPickupTime,
+  ]) {
     final GlobalKey<FormState> formKey = GlobalKey<FormState>();
     final TextEditingController pickupController = TextEditingController(
       text: currentPickup == "—" ? "" : currentPickup,
@@ -2361,156 +2507,358 @@ class _BookinghistoryDetilesScreenState
     final TextEditingController dropController = TextEditingController(
       text: currentDrop == "—" ? "" : currentDrop,
     );
+    final TextEditingController dateController = TextEditingController(
+      text: (currentPickupDate != null && currentPickupDate.isNotEmpty && currentPickupDate != "—")
+          ? currentPickupDate
+          : "",
+    );
+    final TextEditingController timeController = TextEditingController(
+      text: (currentPickupTime != null && currentPickupTime.isNotEmpty && currentPickupTime != "—")
+          ? currentPickupTime
+          : "",
+    );
+    String selectedDateIso = (currentPickupDate != null && currentPickupDate.isNotEmpty && currentPickupDate != "—")
+        ? currentPickupDate
+        : "";
+
     final bool isLocalRental = tripType == "Local Rental Trip";
 
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (BuildContext context) {
-        return Dialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(Dimens.twenty),
-          ),
-          child: SingleChildScrollView(
-            child: Form(
-              key: formKey,
-              autovalidateMode: AutovalidateMode.onUserInteraction,
-              child: Container(
-                padding: Dimens.edgeInsets20,
-                width: Get.width,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(Dimens.twenty),
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Align(
-                      alignment: Alignment.topRight,
-                      child: InkWell(
-                        onTap: () => Get.back(),
-                        child: SvgPicture.asset(
-                          AssetConstants.ic_cancel,
-                          height: Dimens.twentyFive,
-                        ),
-                      ),
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(Dimens.twenty),
+              ),
+              child: SingleChildScrollView(
+                child: Form(
+                  key: formKey,
+                  autovalidateMode: AutovalidateMode.onUserInteraction,
+                  child: Container(
+                    padding: Dimens.edgeInsets20,
+                    width: Get.width,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(Dimens.twenty),
                     ),
-
-                    Dimens.boxHeight10,
-                    Text(
-                      "Edit Booking Address",
-                      style: Styles.txtBlackColorW70020,
-                      textAlign: TextAlign.center,
-                    ),
-                    Dimens.boxHeight24,
-
-                    GestureDetector(
-                      onTap: () async {
-                        final result = await Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => PlaceSearchPage(
-                              city: pickupCity,
-                              isPickup: true,
-                              apiKey: StringConstants.gpooglePlaceKey,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Align(
+                          alignment: Alignment.topRight,
+                          child: InkWell(
+                            onTap: () => Get.back(),
+                            child: SvgPicture.asset(
+                              AssetConstants.ic_cancel,
+                              height: Dimens.twentyFive,
                             ),
                           ),
-                        );
-                        if (result != null) {
-                          pickupController.text = result["display_name"];
-                        }
-                      },
-                      child: AbsorbPointer(
-                        child: CustomTextFormField(
-                          style: Styles.txtBlackColorW40014,
-                          hintText: "Search pickup address",
-                          isBorder: true,
-                          isTitle: true,
-                          textEditingController: pickupController,
-                          validator: (value) =>
-                              (value == null || value.trim().isEmpty) ? "Pickup address is required" : null,
-                          isCompulsory: true,
-                          title: "Pickup Address",
-                          maxLines: 2,
-                          hintStyle: Styles.txtG7Colors40014,
-                          titleStyle: Styles.black50014,
                         ),
-                      ),
-                    ),
 
-                    if (!isLocalRental) ...[
-                      Dimens.boxHeight20,
-                      GestureDetector(
-                        onTap: () async {
-                          final result = await Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => PlaceSearchPage(
-                                city: dropCity,
-                                isPickup: false,
-                                apiKey: StringConstants.gpooglePlaceKey,
+                        Dimens.boxHeight10,
+                        Text(
+                          "Edit Booking Details",
+                          style: Styles.txtBlackColorW70020,
+                          textAlign: TextAlign.center,
+                        ),
+                        Dimens.boxHeight24,
+
+                        // Pickup Address
+                        GestureDetector(
+                          onTap: () async {
+                            final result = await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => PlaceSearchPage(
+                                  city: pickupCity,
+                                  isPickup: true,
+                                  apiKey: StringConstants.gpooglePlaceKey,
+                                ),
+                              ),
+                            );
+                            if (result != null) {
+                              pickupController.text = result["display_name"];
+                            }
+                          },
+                          child: AbsorbPointer(
+                            child: CustomTextFormField(
+                              style: Styles.txtBlackColorW40014,
+                              hintText: "Search pickup address",
+                              isBorder: true,
+                              isTitle: true,
+                              textEditingController: pickupController,
+                              validator: (value) =>
+                                  (value == null || value.trim().isEmpty) ? "Pickup address is required" : null,
+                              isCompulsory: true,
+                              title: "Pickup Address",
+                              maxLines: 2,
+                              hintStyle: Styles.txtG7Colors40014,
+                              titleStyle: Styles.black50014,
+                            ),
+                          ),
+                        ),
+
+                        // Drop Address
+                        if (!isLocalRental) ...[
+                          Dimens.boxHeight20,
+                          GestureDetector(
+                            onTap: () async {
+                              final result = await Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => PlaceSearchPage(
+                                    city: dropCity,
+                                    isPickup: false,
+                                    apiKey: StringConstants.gpooglePlaceKey,
+                                  ),
+                                ),
+                              );
+                              if (result != null) {
+                                dropController.text = result["display_name"];
+                              }
+                            },
+                            child: AbsorbPointer(
+                              child: CustomTextFormField(
+                                style: Styles.txtBlackColorW40014,
+                                hintText: "Search drop address",
+                                isBorder: true,
+                                isTitle: true,
+                                textEditingController: dropController,
+                                validator: (value) =>
+                                    (value == null || value.trim().isEmpty) ? "Drop address is required" : null,
+                                isCompulsory: true,
+                                title: "Drop Address",
+                                maxLines: 2,
+                                hintStyle: Styles.txtG7Colors40014,
+                                titleStyle: Styles.black50014,
                               ),
                             ),
-                          );
-                          if (result != null) {
-                            dropController.text = result["display_name"];
-                          }
-                        },
-                        child: AbsorbPointer(
-                          child: CustomTextFormField(
-                            style: Styles.txtBlackColorW40014,
-                            hintText: "Search drop address",
-                            isBorder: true,
-                            isTitle: true,
-                            textEditingController: dropController,
-                            validator: (value) =>
-                                (value == null || value.trim().isEmpty) ? "Drop address is required" : null,
-                            isCompulsory: true,
-                            title: "Drop Address",
-                            maxLines: 2,
-                            hintStyle: Styles.txtG7Colors40014,
-                            titleStyle: Styles.black50014,
+                          ),
+                        ],
+
+                        Dimens.boxHeight20,
+
+                        // Pickup Date & Pickup Time Row
+                        Row(
+                          children: [
+                            // Date
+                            Expanded(
+                              child: GestureDetector(
+                                onTap: () async {
+                                  DateTime initialDate = DateTime.now();
+                                  if (selectedDateIso.isNotEmpty) {
+                                    try {
+                                      initialDate = DateTime.parse(selectedDateIso);
+                                    } catch (_) {}
+                                  }
+                                  final picked = await showDatePicker(
+                                    context: context,
+                                    initialDate: initialDate.isBefore(DateTime.now()) ? DateTime.now() : initialDate,
+                                    firstDate: DateTime.now(),
+                                    lastDate: DateTime.now().add(const Duration(days: 365)),
+                                  );
+                                  if (picked != null) {
+                                    setDialogState(() {
+                                      selectedDateIso = "${picked.year.toString().padLeft(4, '0')}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}";
+                                      dateController.text = "${picked.day.toString().padLeft(2, '0')}-${picked.month.toString().padLeft(2, '0')}-${picked.year}";
+
+                                      // If user picked today, verify if currently selected time is in the past
+                                      final now = DateTime.now();
+                                      final bool isToday = (picked.year == now.year && picked.month == now.month && picked.day == now.day);
+                                      if (isToday && timeController.text.isNotEmpty) {
+                                        final match = RegExp(r'(\d+):(\d+)\s*(am|pm)?', caseSensitive: false).firstMatch(timeController.text);
+                                        if (match != null) {
+                                          int h = int.parse(match.group(1)!);
+                                          int m = int.parse(match.group(2)!);
+                                          final mod = match.group(3)?.toLowerCase();
+                                          if (mod == 'pm' && h < 12) h += 12;
+                                          if (mod == 'am' && h == 12) h = 0;
+                                          final candidateDt = DateTime(picked.year, picked.month, picked.day, h, m);
+                                          if (candidateDt.isBefore(now)) {
+                                            timeController.clear();
+                                            Utility.showMessage(
+                                              "Previous pickup time was in the past for today. Please select a future time.",
+                                              MessageType.error,
+                                              null,
+                                              "OK",
+                                            );
+                                          }
+                                        }
+                                      }
+                                    });
+                                  }
+                                },
+                                child: AbsorbPointer(
+                                  child: CustomTextFormField(
+                                    style: Styles.txtBlackColorW40014,
+                                    hintText: "Select Date",
+                                    isBorder: true,
+                                    isTitle: true,
+                                    textEditingController: dateController,
+                                    title: "Pickup Date",
+                                    hintStyle: Styles.txtG7Colors40014,
+                                    titleStyle: Styles.black50014,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            Dimens.boxWidth12,
+                            // Time
+                            Expanded(
+                              child: GestureDetector(
+                                onTap: () async {
+                                  DateTime chosenDate = DateTime.now();
+                                  if (selectedDateIso.isNotEmpty) {
+                                    try {
+                                      chosenDate = DateTime.parse(selectedDateIso);
+                                    } catch (_) {}
+                                  }
+                                  final now = DateTime.now();
+                                  final bool isToday = (chosenDate.year == now.year && chosenDate.month == now.month && chosenDate.day == now.day);
+
+                                  TimeOfDay? minTime;
+                                  TimeOfDay initialTime = TimeOfDay.now();
+                                  if (isToday) {
+                                    final future5 = now.add(const Duration(minutes: 5));
+                                    minTime = TimeOfDay(hour: future5.hour, minute: future5.minute);
+                                    initialTime = minTime;
+                                  }
+
+                                  if (timeController.text.isNotEmpty) {
+                                    try {
+                                      final match = RegExp(r'(\d+):(\d+)\s*(am|pm)?', caseSensitive: false).firstMatch(timeController.text);
+                                      if (match != null) {
+                                        int h = int.parse(match.group(1)!);
+                                        int m = int.parse(match.group(2)!);
+                                        final mod = match.group(3)?.toLowerCase();
+                                        if (mod == 'pm' && h < 12) h += 12;
+                                        if (mod == 'am' && h == 12) h = 0;
+                                        final existing = TimeOfDay(hour: h, minute: m);
+                                        if (!isToday || (minTime != null && (existing.hour > minTime.hour || (existing.hour == minTime.hour && existing.minute >= minTime.minute)))) {
+                                          initialTime = existing;
+                                        }
+                                      }
+                                    } catch (_) {}
+                                  }
+
+                                  final picked = await showCustomTimePicker(
+                                    context: context,
+                                    initialTime: initialTime,
+                                    minTime: minTime,
+                                  );
+
+                                  if (picked != null) {
+                                    final candidateDt = DateTime(chosenDate.year, chosenDate.month, chosenDate.day, picked.hour, picked.minute);
+                                    if (isToday && candidateDt.isBefore(DateTime.now())) {
+                                      Utility.showMessage(
+                                        "Pickup time cannot be earlier than current time.",
+                                        MessageType.error,
+                                        null,
+                                        "OK",
+                                      );
+                                      return;
+                                    }
+
+                                    final hour12 = picked.hourOfPeriod == 0 ? 12 : picked.hourOfPeriod;
+                                    final formatted =
+                                        '${hour12.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')} ${picked.period == DayPeriod.am ? 'AM' : 'PM'}';
+                                    setDialogState(() {
+                                      timeController.text = formatted;
+                                    });
+                                  }
+                                },
+                                child: AbsorbPointer(
+                                  child: CustomTextFormField(
+                                    style: Styles.txtBlackColorW40014,
+                                    hintText: "Select Time",
+                                    isBorder: true,
+                                    isTitle: true,
+                                    textEditingController: timeController,
+                                    title: "Pickup Time",
+                                    hintStyle: Styles.txtG7Colors40014,
+                                    titleStyle: Styles.black50014,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+
+                        Dimens.boxHeight30,
+
+                        ElevatedButton(
+                          onPressed: () async {
+                            if (formKey.currentState!.validate()) {
+                              // Ensure pickup date and time is not in the past
+                              if (timeController.text.trim().isNotEmpty) {
+                                DateTime chosenDate = DateTime.now();
+                                if (selectedDateIso.isNotEmpty) {
+                                  try {
+                                    chosenDate = DateTime.parse(selectedDateIso);
+                                  } catch (_) {}
+                                }
+                                final now = DateTime.now();
+                                final bool isToday = (chosenDate.year == now.year && chosenDate.month == now.month && chosenDate.day == now.day);
+                                if (isToday) {
+                                  final match = RegExp(r'(\d+):(\d+)\s*(am|pm)?', caseSensitive: false).firstMatch(timeController.text.trim());
+                                  if (match != null) {
+                                    int h = int.parse(match.group(1)!);
+                                    int m = int.parse(match.group(2)!);
+                                    final mod = match.group(3)?.toLowerCase();
+                                    if (mod == 'pm' && h < 12) h += 12;
+                                    if (mod == 'am' && h == 12) h = 0;
+                                    final candidateDt = DateTime(chosenDate.year, chosenDate.month, chosenDate.day, h, m);
+                                    if (candidateDt.isBefore(now)) {
+                                      Utility.showMessage(
+                                        "Pickup time cannot be earlier than current time.",
+                                        MessageType.error,
+                                        null,
+                                        "OK",
+                                      );
+                                      return;
+                                    }
+                                  }
+                                }
+                              }
+
+                              Get.back();
+                              final success = await controller.updateBookingAddress(
+                                bookingId: bookingId,
+                                pickupAddress: pickupController.text.trim(),
+                                dropAddress: isLocalRental ? null : dropController.text.trim(),
+                                pickupDate: selectedDateIso.isNotEmpty ? selectedDateIso : null,
+                                pickupTime: timeController.text.trim().isNotEmpty ? timeController.text.trim() : null,
+                              );
+                              if (success) {
+                                await controller.fetchBookingDetails(bookingId);
+                              }
+                            }
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: ColorsValue.appColor,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(Dimens.twenty),
+                            ),
+                          ),
+                          child: Padding(
+                            padding: Dimens.edgeInsets24_10_24_10,
+                            child: Text(
+                              "Update Details",
+                              style: Styles.txtBlackColorW40014.copyWith(color: Colors.white),
+                            ),
                           ),
                         ),
-                      ),
-                    ],
-
-                    Dimens.boxHeight30,
-
-                    ElevatedButton(
-                      onPressed: () async {
-                        if (formKey.currentState!.validate()) {
-                          Get.back();
-                          final success = await controller.updateBookingAddress(
-                            bookingId: bookingId,
-                            pickupAddress: pickupController.text.trim(),
-                            dropAddress: isLocalRental ? null : dropController.text.trim(),
-                          );
-                          if (success) {
-                            await controller.fetchBookingDetails(bookingId);
-                          }
-                        }
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: ColorsValue.appColor,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(Dimens.twenty),
-                        ),
-                      ),
-                      child: Padding(
-                        padding: Dimens.edgeInsets24_10_24_10,
-                        child: Text(
-                          "Update Address",
-                          style: Styles.txtBlackColorW40014.copyWith(color: Colors.white),
-                        ),
-                      ),
+                        Dimens.boxHeight24,
+                      ],
                     ),
-                    Dimens.boxHeight24,
-                  ],
+                  ),
                 ),
               ),
-            ),
-          ),
+            );
+          },
         );
       },
     );

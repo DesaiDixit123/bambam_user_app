@@ -111,6 +111,11 @@ Widget _buildBookingCard({
   // -------------------------------
   final status = (booking['booking_status'] ?? '').toString();
   final statusLower = status.toLowerCase();
+  final num pendingAmt = num.tryParse((booking['pending_payment'] ?? 0).toString()) ?? 0;
+  final num totalAmt = num.tryParse((booking['total_payment'] ?? 0).toString()) ?? 0;
+  final num paidAmt = num.tryParse((booking['sub_total_payment'] ?? booking['paid_amount'] ?? 0).toString()) ?? 0;
+  final String payStatus = (booking['payment_status'] ?? '').toString().toLowerCase();
+  final bool isFullyPaid = pendingAmt <= 0 || payStatus == 'completed' || payStatus == 'paid' || (paidAmt >= totalAmt && totalAmt > 0);
 
   String displayStatus = 'Booking Complete';
   Color displayColor = Colors.green;
@@ -136,10 +141,14 @@ Widget _buildBookingCard({
     displayStatus = "Driver & Vehicle Allocated";
     displayColor = const Color(0xFF00C0E8); // #00C0E8
     displayIcon = Icons.local_taxi;
-  } else if (statusLower.contains("complete")) {
+  } else if (statusLower.contains("complete") || (statusLower == "payment pending" && isFullyPaid)) {
     displayStatus = "Booking Completed";
     displayColor = const Color(0xFF12724A); // #12724A
     displayIcon = Icons.check_circle;
+  } else if (statusLower == "payment pending") {
+    displayStatus = "Payment Pending";
+    displayColor = const Color(0xFFFF5A00);
+    displayIcon = Icons.schedule;
   } else {
     displayStatus = status;
     displayColor = ColorsValue.appColor;

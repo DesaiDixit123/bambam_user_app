@@ -773,9 +773,27 @@ class _VehicalDetilesScreenState extends State<VehicalDetilesScreen> {
                                             : (displayName.contains('-')
                                                 ? displayName.split('-').first.trim()
                                                 : displayName));
-                                    final subTitle = (displayName.isNotEmpty && displayName != catName)
-                                        ? displayName
-                                        : '';
+                                    String subTitle = vehicle?['models_text']?.toString() ??
+                                        vehicleTypeMap['models_text']?.toString() ??
+                                        '';
+                                    if (subTitle.isEmpty) {
+                                      final lower = catName.toLowerCase();
+                                      if (lower.contains('hatchback')) {
+                                        subTitle = 'Wagon R, Swift, i10, Tiago or equivalent';
+                                      } else if (lower.contains('sedan')) {
+                                        subTitle = 'Swift Dzire, Honda Amaze, Hyundai Aura or equivalent';
+                                      } else if (lower.contains('ertiga')) {
+                                        subTitle = 'Maruti Ertiga, XL6, Triber or equivalent';
+                                      } else if (lower.contains('crysta')) {
+                                        subTitle = 'Toyota Innova Crysta or equivalent';
+                                      } else if (lower.contains('innova')) {
+                                        subTitle = 'Toyota Innova, Innova Hycross or equivalent';
+                                      } else if (lower.contains('carens') || lower.contains('carance')) {
+                                        subTitle = 'Kia Carens or equivalent';
+                                      } else if (displayName.isNotEmpty && displayName != catName) {
+                                        subTitle = displayName;
+                                      }
+                                    }
                                     if (subTitle.isNotEmpty) {
                                       return Padding(
                                         padding: const EdgeInsets.only(top: 4),

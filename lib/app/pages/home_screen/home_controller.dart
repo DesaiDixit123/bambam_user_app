@@ -1855,16 +1855,10 @@ class HomeController extends GetxController {
         }
       }
 
-      // Do NOT pre-fill pickup/drop with city names so user explicitly chooses exact addresses
       if (tripMode == 3) {
-        // Airport trip
-        if (pickupType == 'pickup') {
-          pickupController.text = formController.text;
-          dropController.text = '';
-        } else {
-          pickupController.text = '';
-          dropController.text = toController.text;
-        }
+        // Airport trip: Pre-fill both pickup and drop from the search screen
+        pickupController.text = formController.text.trim();
+        dropController.text = toController.text.trim();
       } else {
         pickupController.text = '';
         dropController.text = '';

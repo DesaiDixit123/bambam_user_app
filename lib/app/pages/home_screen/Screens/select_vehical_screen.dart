@@ -432,11 +432,32 @@ class SelectVehicalScreen extends StatelessWidget {
                       final vehicleType = (vehicle['vehicle_type'] is Map)
                           ? vehicle['vehicle_type'] as Map<String, dynamic>
                           : <String, dynamic>{};
-                      final brand =
-                          vehicle['brand_name']?.toString() ??
-                          vehicleType['name']?.toString() ??
-                          'Vehicle';
-                      final typeName = vehicleType['name']?.toString() ?? '';
+                      final String typeName = vehicleType['name']?.toString() ?? '';
+                      final String rawBrand = vehicle['brand_name']?.toString() ?? '';
+                      final String displayTitle = typeName.isNotEmpty ? typeName : (rawBrand.isNotEmpty ? rawBrand : 'Cab');
+
+                      String modelsText = vehicle['models_text']?.toString() ??
+                          vehicleType['models_text']?.toString() ??
+                          '';
+
+                      if (modelsText.isEmpty) {
+                        final lowerTitle = displayTitle.toLowerCase();
+                        if (lowerTitle.contains('hatchback')) {
+                          modelsText = 'Wagon R, Swift, i10, Tiago or equivalent';
+                        } else if (lowerTitle.contains('sedan')) {
+                          modelsText = 'Swift Dzire, Honda Amaze, Hyundai Aura or equivalent';
+                        } else if (lowerTitle.contains('ertiga')) {
+                          modelsText = 'Maruti Ertiga, XL6, Triber or equivalent';
+                        } else if (lowerTitle.contains('crysta')) {
+                          modelsText = 'Toyota Innova Crysta or equivalent';
+                        } else if (lowerTitle.contains('innova')) {
+                          modelsText = 'Toyota Innova, Innova Hycross or equivalent';
+                        } else if (lowerTitle.contains('carens') || lowerTitle.contains('carance')) {
+                          modelsText = 'Kia Carens or equivalent';
+                        } else {
+                          modelsText = displayTitle;
+                        }
+                      }
                       final carPhoto =
                           vehicle['vehicle_type']['vehicle_photo']
                               ?.toString() ??
@@ -654,7 +675,7 @@ class SelectVehicalScreen extends StatelessWidget {
                                               CrossAxisAlignment.start,
                                           children: [
                                             Text(
-                                              brand,
+                                              displayTitle,
                                               style: Styles.txtBlackColorW70018
                                                   .copyWith(
                                                     color: const Color(
@@ -664,9 +685,7 @@ class SelectVehicalScreen extends StatelessWidget {
                                             ),
                                             Dimens.boxHeight2,
                                             Text(
-                                              typeName.isNotEmpty
-                                                  ? typeName
-                                                  : 'SUV',
+                                              modelsText,
                                               style: Styles.txtG7Colors40014
                                                   .copyWith(
                                                     color: const Color(
